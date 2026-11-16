@@ -51,12 +51,12 @@ describe("progress service", () => {
   it("reports a rank up when total PP crosses a line", () => {
     const words = W200.slice(0, 26);
     let state = { profile: { id: "g" }, bests: {}, weak: {}, days: [], bestStreak: 0, totals: { galleys: 0, secs: 0, keys: 0, perfect: 0 }, recent: [],
-      top: [{ id: "old", pp: 190, at: 1 }] };
+      top: [{ id: "old", pp: 90, at: 1 }] };
     const { change, state: after } = applyResult(state, res("up", 9, { wpm: 120, acc: 100, targets: words }), []);
     expect(change.rankBefore.rank.name).toBe("Copy boy");
     expect(change.pp).toBeGreaterThan(60);
-    expect(change.ppAfter).toBeCloseTo(190 + 0.95 * change.pp, 1);
-    expect(change.rankAfter.rank.name).toBe("Typesetter");
+    expect(change.ppAfter).toBeCloseTo(90 + 0.95 * change.pp, 1);
+    expect(change.rankAfter.rank.name).toBe("Printer's devil");
     expect(change.rankUp).toBe(true);
     expect(after.top.map((p) => p.id)).toEqual(["old", "up"]);
   });

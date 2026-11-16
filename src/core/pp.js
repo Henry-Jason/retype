@@ -21,14 +21,25 @@ export const PP_RULES = {
   minDistinct: 0.3    // ...and at least 30% of its words must be different
 };
 
+// Each rung is about 30% further than the last, so the early ranks come quickly and the top
+// ones take years. The top, 11,000, is about the most anyone could hold: a top 100 of 250 wpm,
+// 100%, 100-word galleys from the top 5,000.
 export const RANKS = [
   { name: "Copy boy", min: 0 },
-  { name: "Typesetter", min: 200 },
-  { name: "Compositor", min: 500 },
-  { name: "Proofreader", min: 900 },
+  { name: "Printer's devil", min: 100 },
+  { name: "Typesetter", min: 250 },
+  { name: "Compositor", min: 450 },
+  { name: "Proofreader", min: 700 },
+  { name: "Copy editor", min: 1000 },
   { name: "Sub-editor", min: 1400 },
-  { name: "Editor", min: 2000 },
-  { name: "Editor-in-chief", min: 3000 }
+  { name: "Chief sub-editor", min: 1900 },
+  { name: "Editor", min: 2500 },
+  { name: "Senior editor", min: 3300 },
+  { name: "Managing editor", min: 4300 },
+  { name: "Editor-in-chief", min: 5600 },
+  { name: "Publisher", min: 7000 },
+  { name: "Press baron", min: 8700 },
+  { name: "Fourth estate", min: 11000 }
 ];
 
 /** Ordinary galleys count: plain, mixed, the daily and challenge links, by words or time. */

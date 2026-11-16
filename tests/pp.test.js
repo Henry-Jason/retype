@@ -96,13 +96,20 @@ describe("ranks and grades", () => {
   it("go by total PP", () => {
     expect(rankFrom([])).toMatchObject({ rank: null });
     expect(rankFrom([{ id: "a", pp: 10 }]).rank.name).toBe("Copy boy");
-    const r = rankFrom([{ id: "a", pp: 500 }]);
+    const r = rankFrom([{ id: "a", pp: 450 }]);
     expect(r.rank.name).toBe("Compositor");
     expect(r.next.name).toBe("Proofreader");
     expect(r.progress).toBe(0);
-    const top = rankFrom([{ id: "a", pp: 5000 }]);
+    const top = rankFrom([{ id: "a", pp: 15000 }]);
     expect(top.rank).toBe(RANKS[RANKS.length - 1]);
     expect(top.progress).toBe(1);
+  });
+  it("get further apart as they go", () => {
+    const gaps = RANKS.slice(1).map((r, i) => r.min - RANKS[i].min);
+    for (let i = 1; i < gaps.length; i++) expect(gaps[i]).toBeGreaterThan(gaps[i - 1]);
+    // the top is reachable, just: a full top 100 of the best galley a human could type
+    const best = ppFrom({ wpm: 250, acc: 100, diff: 1.2, words: 100 });
+    expect(best * (1 - 0.95 ** 100) / 0.05).toBeGreaterThan(RANKS[RANKS.length - 1].min);
   });
   it("grade accuracy like osu", () => {
     expect(grade(100)).toBe("SS");
