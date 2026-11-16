@@ -20,7 +20,7 @@ Deploying to Firebase Hosting: `firebase use --add` to pick a project, then `npm
 
 Everything runs in the browser. Nothing is sent anywhere yet.
 
-- **Galleys**: 25/50/100 words or custom, 15/30/60/120 seconds or custom, flow (no clock, no end; Esc finishes), and Python code mode.
+- **Galleys**: top 200, 1,000 or 5,000 words (switchable in the header), 25/50/100 words or custom, 15/30/60/120 seconds or custom, flow (no clock, no end; Esc finishes), and Python code mode.
 - **Layouts**: a single galley strip that slides under a fixed pencil, or a page of 2–5 lines.
 - **Proof marks**: wrong letters struck through with the right one written above, insert marks for skipped letters, a corrections margin.
 - **Till roll**: each word prints as you finish it; the receipt at the end has the totals and your next ticket.

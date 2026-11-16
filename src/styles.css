@@ -348,3 +348,8 @@ body.flow .hint-noflow{display:none}
 .chin{width:100%;font:14px var(--ui);padding:7px 9px;border:1px solid var(--desk-line);border-radius:6px;background:var(--paper);color:var(--ink)}
 .chin[readonly]{font:12px "Courier Prime",monospace;color:var(--ink-muted)}
 .done .rankup:first-child{margin-left:0}
+
+/* header: logo and Stats/Settings on one line, galley options on the next */
+header.wrap{align-items:center}
+.navs{display:flex;gap:8px;margin-left:auto}
+header .config{flex-basis:100%}

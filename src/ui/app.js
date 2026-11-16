@@ -85,13 +85,27 @@ export function startApp({ cfg, store, progress }) {
       }
       box.appendChild(g);
     });
+    // which word list: one click, same setting as in the drawer
+    sep();
+    const lists = document.createElement("div"); lists.className = "grp";
+    lists.innerHTML = `<span class="lbl">top</span>`;
+    for (const [key, label] of [["200", "200"], ["1k", "1k"], ["5k", "5k"]]) {
+      const b = btn(label, plain && cfg.list === key, () => {
+        cfg.list = key; saveSettings(cfg);
+        newTest(test && test.source.kind === "mix" ? { ...test.source, seed: undefined } : { kind: "normal" });
+      });
+      b.title = `${LISTS[key].label} words`;
+      lists.appendChild(b);
+    }
+    box.appendChild(lists);
     sep();
     const more = document.createElement("div"); more.className = "grp";
     more.appendChild(btn("flow", plain && cfg.mode === "flow", () => { cfg.mode = "flow"; saveSettings(cfg); newTest({ kind: "normal" }); }));
     more.appendChild(btn("python", !!(test && test.code), () => newTest({ kind: "code", idx: test && test.code ? test.source.idx : 0 })));
     more.appendChild(btn("daily", !!(test && test.source.kind === "daily"), () => newTest(dailySource())));
     box.appendChild(more);
-    const nav = (cls, html, onclick, id) => { const b = document.createElement("button"); b.type = "button"; b.className = cls; b.id = id; b.innerHTML = html; b.onclick = onclick; box.appendChild(b); };
+    const navs = $("#navs"); navs.replaceChildren();
+    const nav = (cls, html, onclick, id) => { const b = document.createElement("button"); b.type = "button"; b.className = cls; b.id = id; b.innerHTML = html; b.onclick = onclick; navs.appendChild(b); };
     nav("navbtn", `${ICON_CHART}Stats`, () => { location.hash = "stats"; }, "openStats");
     nav("navbtn", `${ICON_GEAR}Settings`, openSettings, "openSettings");
   }
