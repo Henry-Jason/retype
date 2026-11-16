@@ -43,6 +43,10 @@ describe("account documents", () => {
     await assertSucceeds(setDoc(doc(as("ana"), "users/ana"), { ...account(), folded: ["r1"] }));
     await assertSucceeds(setDoc(doc(as("ana"), "users/ana"), { ...account(), xp: 1234 }));
     await assertFails(setDoc(doc(as("ana"), "users/ana"), { ...account(), xp: -5 }));
+    const play = (i) => ({ id: `r${i}`, pp: 50, at: i, wpm: 80, acc: 99, kind: "normal", mode: "words", length: 50, list: "1k" });
+    await assertSucceeds(setDoc(doc(as("ana"), "users/ana"), { ...account(), top: Array.from({ length: 100 }, (_, i) => play(i)) }));
+    await assertFails(setDoc(doc(as("ana"), "users/ana"), { ...account(), top: Array.from({ length: 101 }, (_, i) => play(i)) }));
+    await assertFails(setDoc(doc(as("ana"), "users/ana"), { ...account(), top: "lots" }));
     await assertSucceeds(setDoc(doc(as("ana"), "users/ana"), { ...account(), name: "Ana" }));
   });
 });
@@ -94,6 +98,9 @@ describe("leaderboards", () => {
     await assertFails(setDoc(doc(as("ana"), "boards/daily-2026-11-16/entries/ana"), { score: 300 }));
     await assertFails(updateDoc(doc(as("ana"), "boards/daily-2026-11-16/entries/ana"), { score: 300 }));
     await assertFails(deleteDoc(doc(as("ana"), "boards/daily-2026-11-16/entries/ana")));
+    await env.withSecurityRulesDisabled((c) => setDoc(doc(c.firestore(), "boards/pp/entries/ana"), { pp: 812 }));
+    await assertSucceeds(getDoc(doc(anon(), "boards/pp/entries/ana")));
+    await assertFails(setDoc(doc(as("ana"), "boards/pp/entries/ana"), { pp: 99999 }));
   });
 });
 

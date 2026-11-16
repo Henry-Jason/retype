@@ -6,6 +6,7 @@
 // so two devices finishing galleys at the same moment can't overwrite each other's totals.
 import { applyResult } from "../storage/progress-service.js";
 import { legacyXp } from "./levels.js";
+import { mergeTop } from "./pp.js";
 
 export const DOC_VERSION = 1;
 export const WEAK_CAP = 1500;
@@ -13,7 +14,7 @@ export const RECENT = 60;
 export const FOLDED_CAP = 300;
 
 export const emptyDoc = () => ({
-  v: DOC_VERSION, bests: {}, weak: {}, days: [], bestStreak: 0, xp: 0,
+  v: DOC_VERSION, bests: {}, weak: {}, days: [], bestStreak: 0, xp: 0, top: [],
   totals: { galleys: 0, secs: 0, keys: 0, perfect: 0 },
   folded: []
 });
@@ -27,6 +28,7 @@ export function docFrom(x) {
     bests: x.bests || e.bests, weak: x.weak || e.weak, days: x.days || e.days,
     bestStreak: x.bestStreak || 0, totals: { ...e.totals, ...(x.totals || {}) },
     xp: x.xp ?? legacyXp(x.totals),
+    top: Array.isArray(x.top) ? x.top : [],
     folded: Array.isArray(x.folded) ? x.folded : []
   };
 }
@@ -80,6 +82,8 @@ export function mergeGuest(doc, local, pending, today) {
   return {
     ...d,
     weak: mergeWeak(d.weak, local.weak),
+    // the browser's top plays may include galleys from before PP (or before the account had them)
+    top: mergeTop(d.top, local.top),
     bestStreak: Math.max(d.bestStreak, local.bestStreak || 0)
   };
 }

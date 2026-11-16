@@ -1,3 +1,4 @@
+import { totalPp } from "../../src/core/pp.js";
 // An in-memory stand-in for Firebase, used by `vite build --mode uitest` to check the
 // account interface in a browser. Never part of a normal build.
 export function createFakeCloud() {
@@ -25,6 +26,16 @@ export function createFakeCloud() {
     },
     async dailyEntry(day, uid) { return (await this.dailyBoard(day)).find((r) => r.uid === uid) || null; },
     async dailyPlace(day, score) { const b = await this.dailyBoard(day); return { place: b.filter((r) => r.score > score).length + 1, of: b.length }; },
+    // the PP board as the Cloud Function would keep it (from the browser's own numbers here)
+    async ppBoard() {
+      const d = load(), mine = d.accounts["test-uid"];
+      const rows = [{ uid: "r1", name: "Ana", pp: 1840.5, best: 140.2, count: 100 }, { uid: "r2", name: "Ben", pp: 612.3, best: 61, count: 40 }];
+      if (mine?.top?.length) rows.push({ uid: "test-uid", name: (d.profiles || {})["test-uid"]?.name || "Typist", pp: totalPp(mine.top), best: mine.top[0].pp, count: mine.top.length, plays: mine.top, backfilled: !!d.backfilled });
+      return rows.sort((a, b) => b.pp - a.pp);
+    },
+    async ppEntry(uid) { return (await this.ppBoard()).find((r) => r.uid === uid) || null; },
+    async ppPlace(pp) { const b = await this.ppBoard(); return { place: b.filter((r) => r.pp > pp).length + 1, of: b.length }; },
+    async backfillPp() { const d = load(); d.backfilled = (d.backfilled || 0) + 1; save(d); return { already: false }; },
     async deleteAll(uid) { const d = load(); delete d.accounts[uid]; delete d.results[uid]; save(d); }
   };
 }

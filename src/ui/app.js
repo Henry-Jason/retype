@@ -6,10 +6,11 @@ import { analyse, describe } from "../core/analysis.js";
 import { chartData } from "../core/chart-data.js";
 import { SNIPPETS, scriptLines } from "../core/code.js";
 import { buildResult } from "../core/result.js";
-import { rankFrom, streak, dayKey, topWeak, score } from "../core/progress.js";
+import { streak, dayKey, topWeak, score } from "../core/progress.js";
+import { rankFrom, grade } from "../core/pp.js";
 import { encodeChallenge, decodeChallenge, dailySeed, compare, DAILY } from "../core/challenge.js";
 import { record, emptyState, loadProgress } from "../storage/progress-service.js";
-import { syncAccount, pushGalley, forgetAccount, clearAccount, ensureProfile } from "../storage/account-sync.js";
+import { syncAccount, pushGalley, forgetAccount, clearAccount, ensureProfile, ensurePpBoard } from "../storage/account-sync.js";
 import { DEFAULTS, PRESETS, LIMITS, SLIDE, FS, FONTS, SETTINGS, saveSettings } from "./settings.js";
 import { playKey, playErr } from "./sound.js";
 import { renderChart, drawChart } from "./chart.js";
@@ -45,11 +46,12 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     b.toggle("hide-live", !cfg.live); b.toggle("hide-margin", !cfg.margin); b.toggle("hide-roll", !cfg.roll); b.toggle("focus", cfg.focus);
     if (!cfg.focus) b.remove("typing-now");
   }
+  const fmtPp = (x) => Math.round(x).toLocaleString("en-IE");
   function updateStanding() {
-    const rk = rankFrom(state.recent), st = streak(state.days, dayKey(Date.now()));
+    const rk = rankFrom(state.top), st = streak(state.days, dayKey(Date.now()));
     const bits = [];
     if (state.totals.galleys || state.xp) bits.push(`<b class="lv" title="${levelFrom(state.xp).into} / ${levelFrom(state.xp).need} XP to the next level">Lv ${levelFrom(state.xp).level}</b>`);
-    if (rk.rank) bits.push(`<b>${esc(rk.rank.name)}</b>`);
+    if (rk.rank) bits.push(`<b>${esc(rk.rank.name)}</b>`, `${Math.round(rk.pp).toLocaleString("en-IE")} pp`);
     else if (state.totals.galleys) bits.push("unranked");
     if (st.count) bits.push(`${st.count}-day streak`);
     $("#standing").innerHTML = bits.length ? bits.join('<span class="sep">·</span>') : user ? "" : "guest";
@@ -164,6 +166,24 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     }
     note.textContent = "Not on the board yet. It may still be checking; look on the Stats page in a minute.";
   }
+  async function showPpPlace(result, band) {
+    if (!cloud?.ppEntry || !band) return;
+    const note = document.createElement("div"); note.className = "note"; note.textContent = "Checking this galley for the PP board…";
+    band.appendChild(note);
+    for (let i = 0; i < 10; i++) {
+      await new Promise((ok) => setTimeout(ok, i ? 2000 : 1500));
+      if (!note.isConnected) return;
+      try {
+        const e = await cloud.ppEntry(user.uid);
+        if (e && (e.plays || []).some((p) => p.id === result.id)) {
+          const p = await cloud.ppPlace(e.pp);
+          note.textContent = `PP board: ${ordinal(p.place)} of ${p.of}, with ${Math.round(e.pp).toLocaleString("en-IE")} PP.`;
+          return;
+        }
+      } catch { /* try again */ }
+    }
+    note.textContent = "The PP board hasn't caught up with this galley yet; it'll be there shortly.";
+  }
   const ordinal = (n) => n + (n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] || "th");
 
   /* ---------- accounts ---------- */
@@ -210,6 +230,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
         user = u;
         await runSync();
         try { boardName = await ensureProfile({ cloud: c, user: u }); } catch (e) { console.warn("Couldn't set up the board name", e); }
+        ensurePpBoard({ cloud: c, uid: u.uid, state }).catch((e) => console.warn("Couldn't score older galleys for the PP board", e));
         if (first && sync === "synced") toast(`Signed in as ${u.name || u.email}. Your galleys are now saved to your account.`);
       } else if (!u && user) {
         user = null; sync = "idle"; updateStanding();
@@ -653,6 +674,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
           updateStanding();
           // the finish band is drawn by now; only add to it if it's still this galley's
           if (next && result.kind === "daily" && test === finished) showBoardPlace(result, doneBand.querySelector(".doneIn > div"));
+          if (next && change?.inTop && test === finished) showPpPlace(result, doneBand.querySelector(".doneIn > div"));
         });
       }
     }
@@ -669,11 +691,14 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     const marks = test.corrections.length;
     let stamp;
     if (test.died) stamp = { cls: "", big: "Spiked", small: "one mistake", aria: "Spiked: sudden death ended on a mistake" };
-    else if (clean) stamp = { cls: " clean", big: "Perfect", small: "no corrections", aria: "Perfect run" };
-    else stamp = { cls: "", big: "Proofed", small: `${r.acc.toFixed(1)}% accurate`, aria: `Proofed at ${r.acc.toFixed(1)}% accuracy` };
+    else {
+      const g = grade(r.acc);
+      stamp = { cls: " grade" + (g === "SS" ? " clean" : ""), big: g, small: clean ? "perfect · no corrections" : `${r.acc.toFixed(1)}% accurate`, aria: `Grade ${g}, ${r.acc.toFixed(1)}% accuracy` };
+    }
     const sub = test.died ? `Sudden death: out on word ${n}.` : clean ? "Not a mark on it." : `${marks} ${marks === 1 ? "correction" : "corrections"} marked · best clean streak ${r.best}`;
     let badges = "";
     if (change?.isBest) badges += `<span class="pb">New best${change.previous ? ` · was ${change.previous.score.toFixed(1)}` : ""}</span>`;
+    if (change?.pp != null) badges += `<span class="ppb" title="Performance points for this galley">${change.pp.toFixed(1)} PP</span>`;
     if (change?.rankUp) badges += `<span class="rankup">Now ${esc(change.rankAfter.rank.name)}</span>`;
     const levelUp = change && change.levelAfter.level > change.levelBefore.level;
     if (change?.xp) badges += `<span class="xp" title="${esc((change.xpParts || []).map(([l, x]) => `${l} ${x}`).join(" · "))}">+${change.xp} XP</span>`;
@@ -681,6 +706,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     let note = "";
     if (change?.xpParts?.length > 1) note += `<div class="note">${esc(change.xpParts.map(([l, x]) => `${l} +${x}`).join(" · "))}</div>`;
     if (change?.isBest) toast(`New personal best · ${bestLabel(change.key)}: ${change.previous ? `${change.previous.score.toFixed(1)} → ` : ""}${score(r.wpm, r.acc).toFixed(1)}`, "pb");
+    if (change?.rankUp) toast(`Promoted to ${change.rankAfter.rank.name} · ${Math.round(change.ppAfter)} PP`, "lv");
     if (levelUp) toast(`Level ${change.levelAfter.level}! ${change.levelAfter.need - change.levelAfter.into} XP to the next.`, "lv");
     const from = test.source.from;
     if (from && test.committed) {
@@ -699,7 +725,10 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       note += `<div class="note">${firstToday ? `A retry: today's daily stays at your first attempt, ${official.score.toFixed(1)}.` : "Your first attempt today, so this is the one that counts."}${firsts.size ? ` Your best daily is ${best.toFixed(1)} over ${firsts.size} ${firsts.size === 1 ? "day" : "days"}.` : ""}</div>`;
       if (!firstToday && firsts.size && official.score > best) badges += `<span class="pb">Best daily yet</span>`;
     }
-    if (change && test.source.kind === "normal" && !change.rankAfter.rank && change.rankAfter.needed) note += `<div class="note">${change.rankAfter.needed} more ranked ${change.rankAfter.needed === 1 ? "galley" : "galleys"} until your first rank.</div>`;
+    if (change?.pp != null) {
+      const gain = change.ppAfter - change.ppBefore;
+      note += `<div class="note">${change.inTop ? `Total ${fmtPp(change.ppAfter)} PP (+${gain.toFixed(1)}).` : `Total ${fmtPp(change.ppAfter)} PP. This one didn't make your top 100.`}</div>`;
+    } else if (change && test.source.kind === "normal" && !change.rankAfter.rank && !test.code) note += `<div class="note">Galleys of 15 words or more earn PP, and PP earns a rank.</div>`;
     if (!test.committed) note = `<div class="note">Nothing finished, so this one wasn't saved.</div>`;
     doneBand.innerHTML = `<div class="wrap doneIn">
       <div><div class="eyebrow">Galley ${no} · finished</div>
@@ -843,10 +872,10 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
   function wireShare(r, no) {
     const btn = $("#btnShare");
     btn.onclick = () => {
-      const rk = rankFrom(state.recent);
+      const rk = rankFrom(state.top);
       const cv = drawCard({
         galley: no, what: galleyWhat(), date: stampDate(), acc: r.acc, wpm: r.wpm, raw: r.raw, errors: r.errors,
-        best: r.best, secs: r.secs, clean: r.errors === 0 && r.corrections === 0 && !test.died, rank: rk.rank?.name,
+        best: r.best, secs: r.secs, clean: r.errors === 0 && r.corrections === 0 && !test.died, rank: rk.rank?.name, grade: test.died ? null : grade(r.acc),
         pts: lastChart.d.pts, T: lastChart.d.T
       });
       downloadCard(cv, `retype-galley-${no}.png`);
@@ -904,7 +933,9 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
           state = { ...emptyState(), profile: state.profile }; await store.set("profile", state.profile); updateStanding(); route();
         },
         account: { enabled: accountsEnabled, user, sync, syncError, name: boardName },
-        loadBoard: cloud?.dailyBoard ? async () => ({ rows: await cloud.dailyBoard(dayKey(Date.now()), 25), me: user?.uid, signedIn: !!user }) : null,
+        loadBoard: cloud?.dailyBoard ? async (which) => ({
+          rows: which === "pp" ? await cloud.ppBoard(25) : await cloud.dailyBoard(dayKey(Date.now()), 25), me: user?.uid, signedIn: !!user
+        }) : null,
         onRename: async (raw) => {
           const name = cleanName(raw);
           if (!name) return "Use 2 to 20 characters.";

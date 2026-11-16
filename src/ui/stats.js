@@ -1,5 +1,6 @@
-// The stats page: rank, streak, totals, recent galleys, personal bests and the weak-word profile.
-import { RANKS, rankFrom, streak, topWeak, dayKey, isRanked } from "../core/progress.js";
+// The stats page: level, PP and rank, the boards, streak, totals, recent galleys, personal bests and the weak-word profile.
+import { streak, topWeak, dayKey, isRanked } from "../core/progress.js";
+import { RANKS, rankFrom, grade, PP_RULES } from "../core/pp.js";
 import { LISTS } from "../core/words.js";
 import { SNIPPETS } from "../core/code.js";
 import { esc, fmtDuration } from "./util.js";
@@ -56,25 +57,65 @@ function levelCard(xp) {
       </ul>Bonuses need a galley of ${R.minWords}+ words. Each level needs 20 XP more than the last, and there's no top level.</details></div>`;
 }
 
-async function renderBoard(box, handlers) {
+const fmtPp = (x) => Math.round(x).toLocaleString("en-IE");
+
+async function renderBoard(box, handlers, which) {
   if (!box) return;
-  if (!handlers.loadBoard) { box.textContent = "The board needs the internet connection to load."; return; }
+  if (!handlers.loadBoard) { box.textContent = "The boards need an internet connection to load."; return; }
+  box.innerHTML = `<div class="sub">Loading…</div>`;
   try {
-    const { rows, me, signedIn } = await handlers.loadBoard();
-    if (!box.isConnected) return;
-    const list = rows.length
-      ? `<div class="tblwrap"><table class="tbl board"><thead><tr><th class="num">#</th><th>Name</th><th class="num">Score</th><th class="num">WPM</th><th class="num">Accuracy</th><th></th></tr></thead><tbody>${rows.map((r, i) =>
-          `<tr class="${r.uid === me ? "me" : ""}"><td class="num">${i + 1}</td><td>${esc(r.name)}</td><td class="num">${r.score.toFixed(1)}</td><td class="num">${Math.round(r.wpm)}</td><td class="num">${r.acc.toFixed(1)}%</td><td>${r.clean ? "perfect" : ""}</td></tr>`).join("")}</tbody></table></div>`
-      : `<div class="sub">Nobody's on today's board yet. Be first.</div>`;
-    const foot = signedIn ? "Your first attempt each day goes on the board once it's been checked." : "Sign in to put your daily on the board.";
-    box.innerHTML = `${list}<div class="sub" style="margin-top:8px">Every entry is re-scored from its keystrokes on the server. ${foot}</div>`;
+    const { rows, me, signedIn } = await handlers.loadBoard(which);
+    if (!box.isConnected || box.dataset.which !== which) return;
+    let list;
+    if (which === "pp") {
+      list = rows.length
+        ? `<div class="tblwrap"><table class="tbl board"><thead><tr><th class="num">#</th><th>Name</th><th class="num">PP</th><th class="num">Best galley</th><th class="num">Galleys</th></tr></thead><tbody>${rows.map((r, i) =>
+            `<tr class="${r.uid === me ? "me" : ""}"><td class="num">${i + 1}</td><td>${esc(r.name)}</td><td class="num">${fmtPp(r.pp)}</td><td class="num">${r.best.toFixed(1)}</td><td class="num">${r.count}</td></tr>`).join("")}</tbody></table></div>`
+        : `<div class="sub">Nobody's on the PP board yet.</div>`;
+      const foot = signedIn ? "Your best 100 galleys make up your total; each is re-scored from its keystrokes on the server first." : "Sign in to put your PP on the board. Each galley is re-scored from its keystrokes on the server first.";
+      box.innerHTML = `${list}<div class="sub" style="margin-top:8px">${foot}</div>`;
+    } else {
+      list = rows.length
+        ? `<div class="tblwrap"><table class="tbl board"><thead><tr><th class="num">#</th><th>Name</th><th class="num">Score</th><th class="num">WPM</th><th class="num">Accuracy</th><th></th></tr></thead><tbody>${rows.map((r, i) =>
+            `<tr class="${r.uid === me ? "me" : ""}"><td class="num">${i + 1}</td><td>${esc(r.name)}</td><td class="num">${r.score.toFixed(1)}</td><td class="num">${Math.round(r.wpm)}</td><td class="num">${r.acc.toFixed(1)}%</td><td>${r.clean ? "perfect" : ""}</td></tr>`).join("")}</tbody></table></div>`
+        : `<div class="sub">Nobody's on today's board yet. Be first.</div>`;
+      const foot = signedIn ? "Your first attempt each day goes on the board once it's been checked." : "Sign in to put your daily on the board.";
+      box.innerHTML = `${list}<div class="sub" style="margin-top:8px">Every entry is re-scored from its keystrokes on the server. ${foot}</div>`;
+    }
   } catch (e) {
     if (box.isConnected) box.textContent = "Couldn't load the board right now.";
   }
 }
 
+function ppCard(top) {
+  const rk = rankFrom(top), R = PP_RULES;
+  const head = rk.rank
+    ? `<div class="big">${esc(rk.rank.name)}</div>
+       <div class="sub">${fmtPp(rk.pp)} PP${rk.next ? ` · ${fmtPp(rk.next.min - rk.pp)} to ${esc(rk.next.name)}` : " · the top of the ladder"}</div>
+       <div class="meter"><i style="width:${(rk.progress * 100).toFixed(0)}%"></i></div>`
+    : `<div class="big">Unranked</div><div class="sub">Finish a galley of ${R.minWords}+ words to earn your first PP and a rank.</div>`;
+  const ladder = RANKS.slice().reverse().map((r) => `<div class="${rk.rank && r.name === rk.rank.name ? "on" : ""}"><span>${esc(r.name)}</span><span>${r.min.toLocaleString("en-IE")} PP</span></div>`).join("");
+  return `<div class="scard"><h2>Rank</h2>${head}<div class="ladder">${ladder}</div></div>`;
+}
+
+function topPlaysCard(top) {
+  const R = PP_RULES;
+  const rows = top.slice(0, 10).map((p, i) => `<tr><td class="num">${i + 1}</td><td>${esc(resultLabel(p))}</td><td class="num">${p.pp.toFixed(1)}</td><td class="num">${Math.round(R.weight ** i * 100)}%</td><td class="num">${Math.round(p.wpm)}</td><td class="num">${p.acc.toFixed(1)}%</td><td class="grade g${grade(p.acc)}">${grade(p.acc)}</td><td>${shortDate(p.at)}</td></tr>`).join("");
+  return `<div class="scard wide"><h2>Top galleys</h2>
+    ${rows ? `<div class="tblwrap"><table class="tbl"><thead><tr><th class="num">#</th><th>Galley</th><th class="num">PP</th><th class="num">Counts</th><th class="num">WPM</th><th class="num">Accuracy</th><th>Grade</th><th>When</th></tr></thead><tbody>${rows}</tbody></table></div>` : `<div class="sub">Your best galleys will show here.</div>`}
+    <details class="sub"><summary>How PP works</summary>
+      <ul class="xplist">
+        <li><b>Each galley</b> earns PP from its speed, its accuracy, how hard its words were and its length. 100 wpm at 100% on 50 average top-1,000 words is worth 100 PP.</li>
+        <li><b>Accuracy</b> matters most: 98% keeps 78% of the PP, 95% keeps 54%, 90% keeps 28%.</li>
+        <li><b>Speed</b> counts a bit more than in proportion: 150 wpm is worth 1.8 times 100 wpm.</li>
+        <li><b>Harder words</b> earn more: about 0.85× for the top 200, 1× for the top 1,000, 1.2× for the top 5,000, a little more with punctuation or numbers.</li>
+        <li><b>Length:</b> 0.9× at 25 words, 1× at 50, up to 1.2× at 100 words or more.</li>
+        <li><b>Your total</b> is your best galley, plus 95% of your second best, 90% of your third and so on, down your top ${R.top}. It only goes up when you set a new top galley.</li>
+      </ul>Plain, mixed, daily and challenge galleys of ${R.minWords}+ words count; practice, code, flow and sudden death don't. Grades go by accuracy: SS at 100%, S at 98%, A at 95%, B at 90%, C at 85%.</details></div>`;
+}
+
 export function renderStats(view, state, handlers) {
-  const rk = rankFrom(state.recent);
+  const top = state.top || [];
   const st = streak(state.days, dayKey(Date.now()));
   const weak = topWeak(state.weak, 24);
   const ranked = state.recent.filter(isRanked).slice(0, 30).reverse();
@@ -84,13 +125,6 @@ export function renderStats(view, state, handlers) {
   for (const r of state.recent) if (r.kind === "daily") dailyFirst.set(r.day, r);
   const dailies = [...dailyFirst.values()].sort((a, b) => b.at - a.at).slice(0, 7);
 
-  const rankCard = rk.rank
-    ? `<div class="big">${esc(rk.rank.name)}</div>
-       <div class="sub">Score ${rk.score.toFixed(1)}${rk.next ? ` · ${(rk.next.min - rk.score).toFixed(1)} to ${esc(rk.next.name)}` : " · the top of the ladder"}</div>
-       <div class="meter"><i style="width:${(rk.progress * 100).toFixed(0)}%"></i></div>`
-    : `<div class="big">Unranked</div><div class="sub">Finish ${rk.needed} more ranked ${rk.needed === 1 ? "galley" : "galleys"} to get a rank.</div>`;
-  const ladder = RANKS.slice().reverse().map((r) => `<div class="${rk.rank && r.name === rk.rank.name ? "on" : ""}"><span>${esc(r.name)}</span><span>${r.min}+</span></div>`).join("");
-
   let spark = `<div class="sub">Ranked galleys will show here.</div>`;
   if (ranked.length >= 2) {
     const W = 600, H = 70, max = Math.max(...ranked.map((r) => r.score)) * 1.1 || 1;
@@ -98,7 +132,7 @@ export function renderStats(view, state, handlers) {
     const line = ranked.map((r, i) => `${i ? "L" : "M"}${X(i).toFixed(1)},${Y(r.score).toFixed(1)}`).join("");
     spark = `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Score of your last ${ranked.length} ranked galleys"><path class="a" d="${line}L${W},${H}L0,${H}Z"></path><path class="l" d="${line}" vector-effect="non-scaling-stroke"></path></svg>`;
   }
-  const recentRows = state.recent.slice(0, 15).map((r) => `<tr><td>${shortDate(r.at)}</td><td>${esc(resultLabel(r))}</td><td class="num">${Math.round(r.wpm)}</td><td class="num">${r.acc.toFixed(1)}%</td><td class="num">${r.score.toFixed(1)}</td><td>${r.clean ? "perfect" : ""}</td></tr>`).join("");
+  const recentRows = state.recent.slice(0, 15).map((r) => `<tr><td>${shortDate(r.at)}</td><td>${esc(resultLabel(r))}</td><td class="num">${Math.round(r.wpm)}</td><td class="num">${r.acc.toFixed(1)}%</td><td class="num">${r.score.toFixed(1)}</td><td class="num">${r.pp != null ? r.pp.toFixed(1) : ""}</td><td class="grade g${grade(r.acc)}">${r.kind === "code" || r.mode === "flow" ? "" : grade(r.acc)}</td></tr>`).join("");
   const bestRows = bests.map(([k, b]) => `<tr><td>${esc(bestLabel(k))}</td><td class="num">${b.score.toFixed(1)}</td><td class="num">${Math.round(b.wpm)}</td><td class="num">${b.acc.toFixed(1)}%</td><td>${shortDate(b.at)}</td></tr>`).join("");
 
   view.innerHTML = `
@@ -106,21 +140,24 @@ export function renderStats(view, state, handlers) {
       <h1>Your desk</h1>
       <button type="button" class="go" id="statsBack">Back to typing <kbd>esc</kbd></button>
     </div>
-    <p class="lede">${handlers.account?.user ? "Everything here is saved to your account." : "Everything here is saved in this browser only."} Score is wpm × accuracy², so accuracy counts for more than speed: 80 wpm at 100% beats 100 wpm at 89%.</p>
+    <p class="lede">${handlers.account?.user ? "Everything here is saved to your account." : "Everything here is saved in this browser only."} Score is wpm × accuracy², so accuracy counts for more than speed: 80 wpm at 100% beats 100 wpm at 89%. PP adds up your best galleys, and your rank comes from it.</p>
     <div class="sgrid">
       ${accountCard(handlers.account)}
       ${levelCard(state.xp)}
-      <div class="scard wide" id="boardCard"><h2>Today's daily board</h2><div id="boardBox" class="sub">Loading…</div>
+      <div class="scard wide" id="boardCard"><div class="boardhead"><h2>Leaderboards</h2>
+        <div class="seg" role="tablist"><button type="button" role="tab" data-board="pp">PP</button><button type="button" role="tab" data-board="daily">Today's daily</button></div></div>
+        <div id="boardBox" class="sub" data-which="pp">Loading…</div>
         <div class="sactions"><button type="button" class="go" id="statsDaily2">Type today's daily</button></div></div>
-      <div class="scard"><h2>Rank</h2>${rankCard}<div class="sub">From your last ${Math.min(10, Math.max(rk.count, 0))} ranked galleys. Practice, code, flow, sudden death and galleys under 15 words don't count.</div><div class="ladder">${ladder}</div></div>
+      ${ppCard(top)}
       <div class="scard"><h2>Streak</h2><div class="big">${st.count} ${st.count === 1 ? "day" : "days"}</div>
         <div class="sub">Best ${Math.max(state.bestStreak, st.count)} ${Math.max(state.bestStreak, st.count) === 1 ? "day" : "days"}. Any finished galley counts for the day.</div>
         <div class="sub">${st.graceLeft ? "You can miss one day without losing it." : "You've used your missed day for this week; tomorrow counts."}</div></div>
       <div class="scard"><h2>On the desk so far</h2>
         <div class="big">${state.totals.galleys}</div><div class="sub">${state.totals.galleys === 1 ? "galley" : "galleys"} finished</div>
         <div class="sub">${fmtDuration(state.totals.secs)} typing · ${state.totals.keys.toLocaleString()} keys · ${state.totals.perfect} perfect ${state.totals.perfect === 1 ? "galley" : "galleys"} (10+ words, no mistakes)</div></div>
+      ${topPlaysCard(top)}
       <div class="scard wide"><h2>Recent galleys</h2>${spark}
-        ${recentRows ? `<div class="tblwrap"><table class="tbl"><thead><tr><th>When</th><th>Galley</th><th class="num">WPM</th><th class="num">Accuracy</th><th class="num">Score</th><th></th></tr></thead><tbody>${recentRows}</tbody></table></div>` : `<div class="sub">Nothing yet. Your first galley is waiting.</div>`}</div>
+        ${recentRows ? `<div class="tblwrap"><table class="tbl"><thead><tr><th>When</th><th>Galley</th><th class="num">WPM</th><th class="num">Accuracy</th><th class="num">Score</th><th class="num">PP</th><th>Grade</th></tr></thead><tbody>${recentRows}</tbody></table></div>` : `<div class="sub">Nothing yet. Your first galley is waiting.</div>`}</div>
       <div class="scard wide"><h2>Daily galleys</h2>
         <div class="sub">One 40-word galley a day from the top 1,000, the same words for everyone. Your first attempt each day counts.</div>
         ${dailies.length ? `<div class="tblwrap"><table class="tbl"><thead><tr><th>Day</th><th class="num">WPM</th><th class="num">Accuracy</th><th class="num">Score</th><th></th></tr></thead><tbody>${dailies.map((r) => `<tr><td>${shortDate(r.at)}</td><td class="num">${Math.round(r.wpm)}</td><td class="num">${r.acc.toFixed(1)}%</td><td class="num">${r.score.toFixed(1)}</td><td>${r.clean ? "perfect" : ""}</td></tr>`).join("")}</tbody></table></div>` : ""}
@@ -145,7 +182,17 @@ export function renderStats(view, state, handlers) {
     msg.textContent = "Saving…";
     msg.textContent = await handlers.onRename(view.querySelector("#boardName").value);
   };
-  renderBoard(view.querySelector("#boardBox"), handlers);
+  const boardBox = view.querySelector("#boardBox"), tabs = [...view.querySelectorAll("[data-board]")];
+  const showBoard = (which) => {
+    boardBox.dataset.which = which;
+    for (const t of tabs) t.setAttribute("aria-selected", String(t.dataset.board === which));
+    try { localStorage.setItem("retype-board", which); } catch { /* fine */ }
+    renderBoard(boardBox, handlers, which);
+  };
+  for (const t of tabs) t.onclick = () => showBoard(t.dataset.board);
+  let which = "pp";
+  try { which = localStorage.getItem("retype-board") === "daily" ? "daily" : "pp"; } catch { /* fine */ }
+  showBoard(which);
   if (weak.length) {
     view.querySelector("#statsPractice").onclick = () => handlers.onPractice(weak.slice(0, 10).map((w) => w.word));
     view.querySelector("#statsMix").onclick = () => handlers.onMix(weak.slice(0, 12).map((w) => w.word));

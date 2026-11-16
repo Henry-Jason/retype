@@ -72,6 +72,29 @@ export async function createCloud(config, { emulators = false } = {}) {
       ]);
       return { place: above.data().count + 1, of: all.data().count };
     },
+    async ppBoard(n = 50) {
+      const snap = await F.getDocs(F.query(F.collection(db, "boards", "pp", "entries"), F.orderBy("pp", "desc"), F.limit(n)));
+      return snap.docs.map((d) => d.data());
+    },
+    async ppEntry(uid) {
+      const s = await F.getDoc(F.doc(db, "boards", "pp", "entries", uid));
+      return s.exists() ? s.data() : null;
+    },
+    async ppPlace(pp) {
+      const entries = F.collection(db, "boards", "pp", "entries");
+      const [above, all] = await Promise.all([
+        F.getCountFromServer(F.query(entries, F.where("pp", ">", pp))),
+        F.getCountFromServer(entries)
+      ]);
+      return { place: above.data().count + 1, of: all.data().count };
+    },
+    /** Ask the server to score the galleys this account had before PP existed (once). */
+    async backfillPp() {
+      const { getFunctions, httpsCallable, connectFunctionsEmulator } = await import("firebase/functions");
+      const fns = getFunctions(app, "europe-west1");
+      if (emulators) connectFunctionsEmulator(fns, "127.0.0.1", 5001);
+      return (await httpsCallable(fns, "backfillPp")()).data;
+    },
     async deleteAll(uid) {
       for (;;) {
         const snap = await F.getDocs(F.query(results(uid), F.limit(400)));

@@ -1,4 +1,4 @@
-// Personal progress: ranks, personal bests, the daily streak and the long-term weak-word profile.
+// Personal progress: score, personal bests, the daily streak and the long-term weak-word profile.
 // Everything here is pure: it takes plain data and returns plain data, so it can be tested and,
 // later, recomputed on a server from the same stored results.
 
@@ -7,31 +7,8 @@
 /** One number that weighs accuracy heavily: 100 wpm at 90% scores 81, 80 wpm at 100% scores 80. */
 export const score = (wpm, acc) => wpm * (acc / 100) ** 2;
 
-export const RANKS = [
-  { name: "Copy boy", min: 0 },
-  { name: "Typesetter", min: 20 },
-  { name: "Compositor", min: 35 },
-  { name: "Proofreader", min: 50 },
-  { name: "Sub-editor", min: 65 },
-  { name: "Editor", min: 80 },
-  { name: "Editor-in-chief", min: 100 }
-];
-export const RANK_WINDOW = 10, RANK_MIN = 3;
-
-/** Only ordinary galleys count towards rank: no practice, code, flow or sudden death, and at least 15 words typed. */
-export const isRanked = (r) => r.kind === "normal" && (r.mode === "words" || r.mode === "time") && !r.sudden && r.wordsDone >= 15;
-
-/** Rank from the average score of the last RANK_WINDOW ranked galleys. results: newest first. */
-export function rankFrom(results) {
-  const recent = results.filter(isRanked).slice(0, RANK_WINDOW);
-  if (recent.length < RANK_MIN) return { rank: null, needed: RANK_MIN - recent.length, count: recent.length };
-  const avg = recent.reduce((s, r) => s + r.score, 0) / recent.length;
-  let i = 0;
-  while (i + 1 < RANKS.length && avg >= RANKS[i + 1].min) i++;
-  const next = RANKS[i + 1] || null;
-  const progress = next ? (avg - RANKS[i].min) / (next.min - RANKS[i].min) : 1;
-  return { rank: RANKS[i], index: i, next, score: avg, progress: Math.max(0, Math.min(1, progress)), count: recent.length };
-}
+// Ranks now come from total PP (see pp.js); these are re-exported for the rest of the app.
+export { RANKS, rankFrom, countsForPp as isRanked } from "./pp.js";
 
 /* ---------- personal bests ---------- */
 

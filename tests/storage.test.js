@@ -1,3 +1,4 @@
+import W200 from "../src/data/words-200.js";
 import { describe, it, expect } from "vitest";
 import { IDBFactory } from "fake-indexeddb";
 import { openStore, memoryStore } from "../src/storage/store.js";
@@ -47,13 +48,17 @@ describe("progress service", () => {
     expect(s.recent[0].id).toBe("x");
   });
 
-  it("reports a rank up when the average crosses a line", () => {
-    let state = { profile: { id: "g" }, bests: {}, weak: {}, days: [], bestStreak: 0, totals: { galleys: 0, secs: 0, keys: 0, perfect: 0 }, recent: [] };
-    for (const [i, sc] of [30, 30, 30].entries()) state = applyResult(state, res("r" + i, i, { score: sc }), []).state;
-    const { change } = applyResult(state, res("up", 9, { score: 70 }), []);
-    expect(change.rankBefore.rank.name).toBe("Typesetter");
-    expect(change.rankAfter.rank.name).toBe("Compositor");
+  it("reports a rank up when total PP crosses a line", () => {
+    const words = W200.slice(0, 26);
+    let state = { profile: { id: "g" }, bests: {}, weak: {}, days: [], bestStreak: 0, totals: { galleys: 0, secs: 0, keys: 0, perfect: 0 }, recent: [],
+      top: [{ id: "old", pp: 190, at: 1 }] };
+    const { change, state: after } = applyResult(state, res("up", 9, { wpm: 120, acc: 100, targets: words }), []);
+    expect(change.rankBefore.rank.name).toBe("Copy boy");
+    expect(change.pp).toBeGreaterThan(60);
+    expect(change.ppAfter).toBeCloseTo(190 + 0.95 * change.pp, 1);
+    expect(change.rankAfter.rank.name).toBe("Typesetter");
     expect(change.rankUp).toBe(true);
+    expect(after.top.map((p) => p.id)).toEqual(["old", "up"]);
   });
 
   it("saves through the store", async () => {

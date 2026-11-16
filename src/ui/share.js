@@ -2,7 +2,7 @@
 // so it reads the same wherever it's posted.
 const C = { paper: "#fbfbf8", ink: "#2a2d33", muted: "#6a707a", pencil: "#c8322b", line: "#9aa1ab", fill: "rgba(42,45,51,.07)" };
 
-export function drawCard({ galley, what, date, acc, wpm, raw, errors, best, secs, clean, rank, pts, T }) {
+export function drawCard({ galley, what, date, acc, wpm, raw, errors, best, secs, clean, rank, grade, pts, T }) {
   const W = 640, H = 790, s = 2;
   const cv = document.createElement("canvas");
   cv.width = W * s; cv.height = H * s;
@@ -65,8 +65,10 @@ export function drawCard({ galley, what, date, acc, wpm, raw, errors, best, secs
   g.strokeStyle = C.pencil; g.fillStyle = C.pencil; g.globalAlpha = 0.9;
   g.lineWidth = clean ? 7 : 4; g.strokeRect(-95, -40, 190, 80);
   if (clean) { g.lineWidth = 2; g.fillStyle = C.paper; g.strokeStyle = C.paper; g.strokeRect(-89, -34, 178, 68); g.strokeStyle = C.pencil; g.fillStyle = C.pencil; }
-  g.textAlign = "center"; g.font = `800 30px Archivo, sans-serif`; g.letterSpacing = "5px";
-  g.fillText(clean ? "PERFECT" : "PROOFED", 3, 8); g.letterSpacing = "2px";
+  g.textAlign = "center";
+  if (grade) { g.font = `800 40px Archivo, sans-serif`; g.letterSpacing = "6px"; g.fillText(grade, 3, 10); }
+  else { g.font = `800 30px Archivo, sans-serif`; g.letterSpacing = "5px"; g.fillText(clean ? "PERFECT" : "PROOFED", 3, 8); }
+  g.letterSpacing = "2px";
   g.font = `700 11px Archivo, sans-serif`; g.fillText(clean ? "NO CORRECTIONS" : `${acc.toFixed(1)}% ACCURATE`, 2, 28);
   g.restore();
   return cv;

@@ -65,6 +65,12 @@ npm run dev:emulators  # the app pointed at the emulators, with fake Google sign
 
 Levels run from 0 with no cap; level n needs `100 + 20n` XP to clear. XP comes from typing (one point per five correct keys), accuracy, speed (capped at 200 wpm), perfect galleys, personal bests, rank-ups, the first galley of the day, the streak and the daily. Bonuses need at least 10 words. The XP for each galley is worked out once and stored on the result, so the account adds exactly what the browser showed. Rules live in `src/core/levels.js`.
 
+## PP, ranks and grades
+
+Performance points work like osu!'s. Each galley of 15+ words (plain, mixed, daily or challenge; not practice, code, flow or sudden death) earns `100 × (wpm/100)^1.5 × (acc/100)^12 × difficulty × length`. Difficulty comes from the words actually typed (their frequency rank, plus a little for capitals, punctuation and numbers): about 0.85 for the top 200, 1 for the top 1,000, 1.2 for the top 5,000. Length runs from 0.8 to 1.2 at 100 words. Your total is your top 100 galleys, each weighted 0.95× the one above. Ranks (Copy boy to Editor-in-chief, 0 to 3,000 PP) come from the total, and each galley gets a letter grade from its accuracy (SS 100%, S 98%, A 95%, B 90%, C 85%). Rules live in `src/core/pp.js`; the top 100 is kept locally and in the account document (`top`).
+
+The all-time PP board (`boards/pp/entries/{uid}`) is written only by the `postPp` function, which re-scores every saved galley from its keystrokes. `backfillPp` (callable, once per account) scores galleys saved before PP existed, and `clearPp` removes the entry when progress is cleared.
+
 ## Daily board
 
 Signed-in players' first daily of the day goes on `boards/daily-{day}`. Nobody can write to a board directly: the `postDaily` Cloud Function (in `functions/`) picks up each new daily result, rebuilds the galley from its keystroke log with `src/core/verify.js`, checks the words match the day's seed, recomputes wpm, accuracy and score, rejects impossible typing (over 250 wpm, too many sub-12 ms gaps), and only then writes the entry. Names come from `profiles/{uid}` (2 to 20 characters, set in Stats); `renameOnBoards` updates the last two days when someone renames.

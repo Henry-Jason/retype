@@ -16,7 +16,7 @@
 import { mergeGuest, foldResult, mergeRecent, toCloud, fromCloud, docFrom, RECENT, defaultName } from "../core/sync.js";
 import { dayKey } from "../core/progress.js";
 
-const DOC_KEYS = ["bests", "weak", "days", "bestStreak", "totals", "xp"];
+const DOC_KEYS = ["bests", "weak", "days", "bestStreak", "totals", "xp", "top"];
 
 async function saveDoc(store, doc) {
   await Promise.all(DOC_KEYS.map((k) => store.set(k, doc[k])));
@@ -34,7 +34,7 @@ export async function syncAccount({ store, cloud, uid, state, today = dayKey(Dat
   const pending = (await Promise.all(pendingIds.map((id) => store.getResult(id)))).filter(Boolean);
 
   for (const r of pending) await cloud.putResult(uid, toCloud(r, uid));
-  const local = { weak: state.weak, bestStreak: state.bestStreak };
+  const local = { weak: state.weak, bestStreak: state.bestStreak, top: state.top };
   const doc = docFrom(await cloud.foldAccount(uid, (cur) => mergeGuest(cur, local, pending, today)));
 
   const remote = (await cloud.recentResults(uid, RECENT)).map(fromCloud);
@@ -79,6 +79,18 @@ export async function ensureProfile({ cloud, user }) {
   const name = defaultName(user);
   await cloud.setProfile(user.uid, name);
   return name;
+}
+
+/**
+ * Galleys typed before PP existed are scored onto the PP board once, by the server. Asks for
+ * that when the account has galleys that earn PP but its board entry hasn't been backfilled.
+ */
+export async function ensurePpBoard({ cloud, uid, state }) {
+  if (!cloud?.ppEntry || !state.top?.length) return false;
+  const e = await cloud.ppEntry(uid);
+  if (e?.backfilled) return false;
+  await cloud.backfillPp();
+  return true;
 }
 
 /** Signing out: this browser forgets the account's data. The account keeps everything. */

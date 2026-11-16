@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { score, rankFrom, RANKS, isRanked, modeKey, updateBests, streak, dayKey, updateWeak, topWeak } from "../src/core/progress.js";
+import { score, isRanked, modeKey, updateBests, streak, dayKey, updateWeak, topWeak } from "../src/core/progress.js";
 
 const ranked = (sc, extra = {}) => ({ kind: "normal", mode: "words", length: 25, list: "200", wordsDone: 25, score: sc, wpm: sc, acc: 100, ...extra });
 
@@ -11,31 +11,15 @@ describe("score", () => {
   });
 });
 
-describe("rank", () => {
-  it("needs three ranked galleys first", () => {
-    expect(rankFrom([ranked(50), ranked(50)])).toMatchObject({ rank: null, needed: 1 });
-  });
-  it("averages the last ten ranked galleys", () => {
-    const r = rankFrom([ranked(60), ranked(50), ranked(40)]);
-    expect(r.rank.name).toBe("Proofreader");
-    expect(r.score).toBe(50);
-    expect(r.next.name).toBe("Sub-editor");
-    expect(r.progress).toBe(0);
-    const old = Array(20).fill(ranked(10));
-    expect(rankFrom([...Array(10).fill(ranked(90)), ...old]).rank.name).toBe("Editor");
-  });
+describe("what counts for rank", () => {
   it("ignores practice, code, flow, sudden death and short galleys", () => {
+    expect(isRanked(ranked(50))).toBe(true);
+    expect(isRanked(ranked(50, { kind: "daily" }))).toBe(true);
     expect(isRanked(ranked(50, { kind: "practice" }))).toBe(false);
     expect(isRanked(ranked(50, { kind: "code", mode: "code" }))).toBe(false);
     expect(isRanked(ranked(50, { mode: "flow" }))).toBe(false);
     expect(isRanked(ranked(50, { sudden: true }))).toBe(false);
     expect(isRanked(ranked(50, { wordsDone: 10 }))).toBe(false);
-  });
-  it("tops out at the last rank", () => {
-    const r = rankFrom(Array(5).fill(ranked(150)));
-    expect(r.rank).toBe(RANKS[RANKS.length - 1]);
-    expect(r.next).toBeNull();
-    expect(r.progress).toBe(1);
   });
 });
 

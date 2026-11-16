@@ -218,7 +218,7 @@ kbd{font:700 11px "Courier Prime",monospace;color:var(--desk-ink);background:var
 .seg{display:flex;flex-wrap:wrap;gap:4px;background:var(--chip);border-radius:8px;padding:3px;align-self:flex-start}
 .seg button{border:0;background:none;color:var(--desk-muted);font:600 13px var(--ui);padding:6px 11px;border-radius:6px;cursor:pointer}
 .seg button:hover{color:var(--desk-ink)}
-.seg button[aria-pressed="true"]{background:var(--paper);color:var(--desk-ink);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.seg button[aria-pressed="true"],.seg button[aria-selected="true"]{background:var(--paper);color:var(--desk-ink);box-shadow:0 1px 2px rgba(0,0,0,.12)}
 .dact{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
 .dact button{font:600 13px var(--ui);padding:7px 12px;border-radius:6px;border:1px solid var(--desk-line);background:none;color:var(--desk-ink);cursor:pointer}
 .keys{display:grid;grid-template-columns:auto 1fr;gap:8px 14px;font-size:13px;color:var(--desk-muted);margin-top:10px;align-items:baseline}
@@ -377,3 +377,12 @@ details summary{cursor:pointer;color:var(--ink)}
 .done .xp{display:inline-block;margin:8px 8px 0 0;font:700 12px var(--ui);letter-spacing:.08em;color:var(--ink);border:1.5px solid var(--ink-muted);padding:3px 8px;border-radius:4px}
 .toast.pb{background:var(--pencil);color:var(--on-pencil)}
 .toast.lv{background:var(--ink);color:var(--paper)}
+
+/* PP and grades */
+.done .ppb{display:inline-block;margin:8px 8px 0 0;font:700 12px var(--type);letter-spacing:.04em;color:var(--paper);background:var(--ink);padding:4px 8px;border-radius:4px}
+.stamp.grade b{font-size:46px;letter-spacing:.08em;padding-left:.08em}
+.stamp.grade{padding:6px 26px 8px;min-width:150px}
+.boardhead{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+.boardhead h2{margin:0}
+.tbl td.grade{font-weight:700;font-family:var(--ui);letter-spacing:.04em}
+.tbl td.gSS,.tbl td.gS{color:var(--pencil)}

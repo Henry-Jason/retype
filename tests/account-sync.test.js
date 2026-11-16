@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { IDBFactory } from "fake-indexeddb";
 import { openStore } from "../src/storage/store.js";
 import { loadProgress, record } from "../src/storage/progress-service.js";
-import { syncAccount, pushGalley, forgetAccount, clearAccount } from "../src/storage/account-sync.js";
+import { syncAccount, pushGalley, forgetAccount, clearAccount, ensurePpBoard } from "../src/storage/account-sync.js";
+import W1K from "../src/data/words-1k.js";
 
 // An in-memory stand-in for Firestore that behaves like the rules: results can't be overwritten.
 function fakeCloud() {
@@ -132,6 +133,34 @@ describe("finishing galleys while signed in", () => {
     }
     expect(cloud.accounts.get("ana").xp).toBe(d.state.xp);
     expect(d.state.xp).toBeGreaterThan(0);
+  });
+
+  it("keeps the same top galleys and PP in the account as in this browser", async () => {
+    const cloud = fakeCloud(), d = await device();
+    const pp = (i) => ({ targets: W1K.slice(i * 30, i * 30 + 26), wpm: 60 + i * 10, acc: 100 });
+    await play(d, pp(0)); // as a guest, before signing in
+    d.state = await syncAccount({ store: d.store, cloud, uid: "ana", state: d.state, today: TODAY });
+    expect(cloud.accounts.get("ana").top).toHaveLength(1);
+    for (let i = 1; i < 4; i++) {
+      const r = await play(d, pp(i));
+      expect(r.pp).toBeGreaterThan(0);
+      d.state = (await pushGalley({ store: d.store, cloud, uid: "ana", state: d.state, result: r, words, today: TODAY })) || d.state;
+    }
+    expect(cloud.accounts.get("ana").top).toEqual(d.state.top);
+    expect(d.state.top.map((p) => p.wpm)).toEqual([90, 80, 70, 60]);
+    // a second browser signing in sees the same
+    const d2 = await device();
+    d2.state = await syncAccount({ store: d2.store, cloud, uid: "ana", state: d2.state, today: TODAY });
+    expect(d2.state.top).toEqual(d.state.top);
+  });
+
+  it("asks the server to score older galleys for the PP board once", async () => {
+    let calls = 0, entry = null;
+    const cloud = { async ppEntry() { return entry; }, async backfillPp() { calls++; entry = { backfilled: true }; } };
+    expect(await ensurePpBoard({ cloud, uid: "ana", state: { top: [] } })).toBe(false);
+    expect(await ensurePpBoard({ cloud, uid: "ana", state: { top: [{ id: "a", pp: 5 }] } })).toBe(true);
+    expect(await ensurePpBoard({ cloud, uid: "ana", state: { top: [{ id: "a", pp: 5 }] } })).toBe(false);
+    expect(calls).toBe(1);
   });
 
   it("does nothing for a guest", async () => {

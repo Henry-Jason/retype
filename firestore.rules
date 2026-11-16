@@ -1,7 +1,7 @@
 rules_version = '2';
 
 // Each person can read and write only their own data:
-//   users/{uid}                  the account document (bests, weak words, streak days, totals)
+//   users/{uid}                  the account document (bests, weak words, streak days, totals, top plays)
 //   users/{uid}/results/{id}     one document per finished galley; never edited once written
 //   profiles/{uid}               a display name, public so boards can show it
 //   boards/{board}/entries/{uid} leaderboard entries: anyone can read, only the Cloud Function
@@ -16,7 +16,7 @@ service cloud.firestore {
 
     match /users/{uid} {
       function validAccount(d) {
-        return d.keys().hasOnly(['v', 'bests', 'weak', 'days', 'bestStreak', 'totals', 'folded', 'xp', 'name', 'updated'])
+        return d.keys().hasOnly(['v', 'bests', 'weak', 'days', 'bestStreak', 'totals', 'folded', 'xp', 'top', 'name', 'updated'])
           && d.v is int
           && d.bests is map
           && d.weak is map
@@ -25,6 +25,7 @@ service cloud.firestore {
           && d.totals is map
           && (!('folded' in d) || (d.folded is list && d.folded.size() <= 300))
           && (!('xp' in d) || (d.xp is number && d.xp >= 0))
+          && (!('top' in d) || (d.top is list && d.top.size() <= 100))
           && (!('name' in d) || (d.name is string && d.name.size() <= 40));
       }
 
