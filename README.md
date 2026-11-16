@@ -74,4 +74,4 @@ Each stored result carries an id, a `userId` (the guest id for now), a timestamp
 
 ## Code mode
 
-The six scripts and their explanations are hand-written. Each stored output comes from running the script with Python 3, and `tests/snippets.test.js` re-runs them when `python3` is available, so an edited script can't drift from its output. Running the code live in the browser (Pyodide) is a later step.
+The 22 scripts and their explanations are hand-written. Each stored output comes from running the script with Python 3, and `tests/snippets.test.js` re-runs them when `python3` is available, so an edited script can't drift from its output. Running the code live in the browser (Pyodide) is a later step.
