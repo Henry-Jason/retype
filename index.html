@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Retype</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <meta name="description" content="An accuracy-first typing trainer. Mistakes are marked like a proof, every galley prints a receipt, and the words you fumble come back until you don't.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;800&family=Atkinson+Hyperlegible+Mono:wght@400&family=Caveat:wght@600;700&family=Courier+Prime:wght@400;700&family=IBM+Plex+Mono:wght@400&family=Overpass+Mono:wght@400;700&display=swap">
+</head>
+<body>
+  <header class="wrap">
+    <div class="mark"><b>retype</b><small id="standing">guest</small></div>
+    <div class="config" id="config"></div>
+  </header>
+  <p class="narrow wrap">Built for a physical keyboard. It works best on a desktop or laptop.</p>
+
+  <main id="typingView">
+    <div class="live wrap">
+      <div class="stat"><label>Accuracy</label><b id="liveAcc">100%</b></div>
+      <div class="stat"><label>Clean streak</label><b id="liveStreak">0</b></div>
+      <div class="stat"><label id="progLabel">Words</label><b id="liveProg">0/25</b></div>
+      <div class="tag" id="tag" hidden></div>
+    </div>
+
+    <section class="stage galley" id="stage">
+      <input id="hidden" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Typing input">
+      <div class="tape"><div id="track"></div></div>
+      <div id="pencil" class="idle"></div>
+      <div class="focus-msg">Click here or press any key to focus</div>
+    </section>
+
+    <section class="done" id="done" hidden></section>
+
+    <div class="lower wrap">
+      <div class="left" id="during">
+        <div class="corr"><h2>Corrections</h2><ol id="corr"></ol></div>
+        <div class="hints">
+          <span><kbd>tab</kbd> new galley</span>
+          <span class="hint-flow"><kbd>esc</kbd> finish the session</span>
+          <span class="hint-noflow"><kbd>esc</kbd> restart this one</span>
+          <span><kbd>ctrl</kbd> <kbd>⌫</kbd> delete word</span>
+          <span>the clock pauses if you click away</span>
+        </div>
+      </div>
+      <div class="left" id="after" hidden></div>
+      <aside class="roll"><div class="receipt" id="receipt"></div></aside>
+    </div>
+  </main>
+
+  <main id="statsView" class="wrap" hidden></main>
+
+  <div class="scrim" id="scrim" hidden></div>
+  <aside class="drawer" id="drawer" hidden aria-label="Settings">
+    <div class="dhead"><h2>Settings</h2><button type="button" id="closeSettings">Done</button></div>
+    <div class="dbody" id="settingsBody"></div>
+  </aside>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
