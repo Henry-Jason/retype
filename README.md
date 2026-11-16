@@ -70,7 +70,7 @@ Each stored result carries an id, a `userId` (the guest id for now), a timestamp
 ## Word lists
 
 - `src/data/words-200.js`: hand-picked.
-- `src/data/words-1k.js` and `words-5k.js`: the most frequent English words from [wordfreq](https://github.com/rspeer/wordfreq) (data licensed [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)). They're filtered to plain a–z words, with abbreviations, contraction fragments and a profanity screen removed. The 5k list still contains some names and places and is worth a read-through.
+- `src/data/words-1k.js` and `words-5k.js`: the most frequent English words from [wordfreq](https://github.com/rspeer/wordfreq) (data licensed [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)), filtered to plain a–z words. Names, places, nationalities, religions, brands, days and months are removed: each word is checked against Webster's dictionary (a word only ever written with a capital is a proper noun) and the GeoNames list of cities and countries, then reviewed by hand, because some words are both ("bill", "mark", "rose" and "turkey" stay; "york", "smith" and "jordan" go). Abbreviations, contraction fragments, foreign fragments, text-speak and profanity are removed too.
 
 ## Code mode
 
