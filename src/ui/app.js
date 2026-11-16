@@ -8,7 +8,8 @@ import { SNIPPETS, scriptLines } from "../core/code.js";
 import { buildResult } from "../core/result.js";
 import { rankFrom, streak, dayKey, topWeak, score } from "../core/progress.js";
 import { encodeChallenge, decodeChallenge, dailySeed, compare, DAILY } from "../core/challenge.js";
-import { record, emptyState } from "../storage/progress-service.js";
+import { record, emptyState, loadProgress } from "../storage/progress-service.js";
+import { syncAccount, pushGalley, forgetAccount, clearAccount } from "../storage/account-sync.js";
 import { DEFAULTS, PRESETS, LIMITS, SLIDE, FS, FONTS, SETTINGS, saveSettings } from "./settings.js";
 import { playKey, playErr } from "./sound.js";
 import { renderChart, drawChart } from "./chart.js";
@@ -16,13 +17,15 @@ import { drawCard, downloadCard } from "./share.js";
 import { renderStats } from "./stats.js";
 import { $, esc, pad, stampDate, uuid } from "./util.js";
 
-export function startApp({ cfg, store, progress }) {
+export function startApp({ cfg, store, progress, accountsEnabled = false, cloudReady = Promise.resolve(null) }) {
   const stage = $("#stage"), track = $("#track"), tape = $(".tape"), pencil = $("#pencil"), input = $("#hidden"), tag = $("#tag");
   const during = $("#during"), after = $("#after"), receipt = $("#receipt"), corrList = $("#corr"), drawer = $("#drawer"), scrim = $("#scrim");
   const typingView = $("#typingView"), statsView = $("#statsView"), doneBand = $("#done");
   const liveAcc = $("#liveAcc"), liveStreak = $("#liveStreak"), liveProg = $("#liveProg"), progLabel = $("#progLabel");
 
   let state = progress;
+  // accounts: cloud is the Firebase layer once loaded; user is who's signed in
+  let cloud = null, user = null, sync = "idle", syncError = "";
   let test, wordEls, cache, center, rows, ticker, idleTimer, editing = null, drawerOpen = false, lastChart = null;
   const galleyNo = () => pad(state.totals.galleys + 1, 4);
   let notice = "";
@@ -46,7 +49,12 @@ export function startApp({ cfg, store, progress }) {
     if (rk.rank) bits.push(`<b>${esc(rk.rank.name)}</b>`);
     else if (state.totals.galleys) bits.push("unranked");
     if (st.count) bits.push(`${st.count}-day streak`);
-    $("#standing").innerHTML = bits.length ? bits.join('<span class="sep">·</span>') : "guest";
+    $("#standing").innerHTML = bits.length ? bits.join('<span class="sep">·</span>') : user ? "" : "guest";
+    renderNavs();
+  }
+  function toast(msg) {
+    const t = $("#toast"); t.textContent = msg; t.hidden = false;
+    clearTimeout(toast.t); toast.t = setTimeout(() => { t.hidden = true; }, 4000);
   }
 
   /* ---------- header ---------- */
@@ -104,11 +112,75 @@ export function startApp({ cfg, store, progress }) {
     more.appendChild(btn("python", !!(test && test.code), () => newTest({ kind: "code", idx: test && test.code ? test.source.idx : 0 })));
     more.appendChild(btn("daily", !!(test && test.source.kind === "daily"), () => newTest(dailySource())));
     box.appendChild(more);
-    const navs = $("#navs"); navs.replaceChildren();
-    const nav = (cls, html, onclick, id) => { const b = document.createElement("button"); b.type = "button"; b.className = cls; b.id = id; b.innerHTML = html; b.onclick = onclick; navs.appendChild(b); };
+    renderNavs();
+  }
+  function renderNavs() {
+    const navs = $("#navs"); if (!navs) return;
+    navs.replaceChildren();
+    const nav = (cls, html, onclick, id, title) => { const b = document.createElement("button"); b.type = "button"; b.className = cls; b.id = id; b.innerHTML = html; b.onclick = onclick; if (title) b.title = title; navs.appendChild(b); };
+    if (accountsEnabled) {
+      if (user) {
+        const first = esc((user.name || user.email || "Account").split(/[ @]/)[0]);
+        const title = sync === "syncing" ? "Syncing…" : sync === "error" ? `Not synced: ${syncError}` : "Synced";
+        nav("navbtn acct", `<i class="dot ${sync}"></i>${first}`, () => { location.hash = "stats"; }, "openAccount", title);
+      } else {
+        nav("navbtn", "Sign in", signIn, "signIn", "Sign in with Google to keep your progress on every device");
+      }
+    }
     nav("navbtn", `${ICON_CHART}Stats`, () => { location.hash = "stats"; }, "openStats");
     nav("navbtn", `${ICON_GEAR}Settings`, openSettings, "openSettings");
   }
+
+  /* ---------- accounts ---------- */
+  async function runSync() {
+    if (!user || !cloud) return;
+    sync = "syncing"; renderNavs();
+    try {
+      state = await syncAccount({ store, cloud, uid: user.uid, state });
+      sync = "synced"; syncError = "";
+    } catch (e) {
+      console.warn("Sync failed", e);
+      sync = "error"; syncError = e?.code || e?.message || "unknown error";
+    }
+    updateStanding();
+    if (!statsView.hidden) route();
+  }
+  async function signIn() {
+    const c = cloud || (await cloudReady);
+    if (!c) { toast("Sign-in isn't available right now."); return; }
+    try { await c.signIn(); }
+    catch (e) {
+      if (e?.code === "auth/popup-closed-by-user" || e?.code === "auth/cancelled-popup-request") return;
+      if (e?.code === "auth/popup-blocked") toast("Your browser blocked the sign-in window. Allow pop-ups for this site and try again.");
+      else toast(`Couldn't sign in (${e?.code || "unknown error"}).`);
+    }
+  }
+  async function signOut() {
+    if (!cloud) return;
+    await cloud.signOut();
+    user = null; sync = "idle";
+    await forgetAccount(store);
+    state = await loadProgress(store);
+    toast("Signed out. Your progress is safe in your account; this browser starts fresh.");
+    updateStanding();
+    newTest({ kind: "normal" });
+    route();
+  }
+  cloudReady.then((c) => {
+    cloud = c;
+    if (!c) return;
+    c.onUser(async (u) => {
+      if (u && (!user || user.uid !== u.uid)) {
+        const first = !(await store.get("account"));
+        user = u;
+        await runSync();
+        if (first && sync === "synced") toast(`Signed in as ${u.name || u.email}. Your galleys are now saved to your account.`);
+      } else if (!u && user) {
+        user = null; sync = "idle"; updateStanding();
+      }
+    });
+  });
+
   function applyConfig(mode, v) {
     cfg.mode = mode; cfg[mode] = v; saveSettings(cfg);
     newTest(test && test.source.kind === "mix" ? { ...test.source, seed: undefined } : { kind: "normal" });
@@ -534,6 +606,16 @@ export function startApp({ cfg, store, progress }) {
     if (test.committed > 0) {
       const out = await record(store, state, result, r.words);
       state = out.state; change = out.change;
+      // send it to the account in the background; a failure is retried at the next sync
+      if (accountsEnabled) {
+        const uid = user?.uid;
+        if (uid) { sync = "syncing"; renderNavs(); }
+        pushGalley({ store, cloud, uid, state, result, words: r.words }).then((next) => {
+          if (next) { state = { ...next, recent: state.recent }; sync = "synced"; }
+          else if (uid) { sync = "error"; syncError = "offline? it will retry"; }
+          updateStanding();
+        });
+      }
     }
     showDone(r, change, thisGalley, earlierDailies);
     finishReceipt(r);
@@ -611,6 +693,7 @@ export function startApp({ cfg, store, progress }) {
     if (!ok || !test.committed) return "";
     let name = "";
     try { name = localStorage.getItem("retype-name") || ""; } catch { /* fine */ }
+    if (!name && user?.name) name = user.name.split(" ")[0];
     return `<div class="card"><h3>Challenge a friend</h3><p>A link to these exact ${test.code ? "lines" : "words"}, with your score to beat.</p>
       <label class="h" for="chName" style="font-size:12px;color:var(--desk-muted)">Your name on the link (optional)</label>
       <input id="chName" class="chin" maxlength="20" value="${esc(name)}" placeholder="Anonymous">
@@ -767,12 +850,19 @@ export function startApp({ cfg, store, progress }) {
         onDaily: () => { location.hash = ""; newTest(dailySource()); },
         onPractice: (words) => { location.hash = ""; newTest({ kind: "practice", words: shuffleSpread(words.flatMap((w) => [w, w, w]), mulberry32(randomSeed())), label: `Practice · ${words.length} trouble words ×3` }); },
         onMix: (words) => { location.hash = ""; newTest({ kind: "mix", weak: words, ratio: cfg.ratio }); },
-        onReset: async () => { await store.clear(); state = { ...emptyState(), profile: state.profile }; await store.set("profile", state.profile); updateStanding(); route(); }
+        onReset: async () => {
+          if (user && cloud) await clearAccount({ store, cloud, uid: user.uid });
+          else await store.clear();
+          state = { ...emptyState(), profile: state.profile }; await store.set("profile", state.profile); updateStanding(); route();
+        },
+        account: { enabled: accountsEnabled, user, sync, syncError },
+        onSignIn: signIn, onSignOut: signOut
       });
       window.scrollTo(0, 0);
     } else if (test && !test.ended) { measure(); placeCaret(true); focusInput(); }
   }
   addEventListener("hashchange", route);
+  if (import.meta.env.MODE === "uitest") window.__retype = { get state() { return state; }, get user() { return user; } };
 
   applyDisplay();
   newTest({ kind: "normal" });

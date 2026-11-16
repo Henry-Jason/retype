@@ -50,6 +50,8 @@ function idbStore(db) {
       return out;
     },
     async count() { return req(tx("results", "readonly").count()); },
+    async all() { return req(tx("results", "readonly").getAll()); },
+    async getResult(id) { return req(tx("results", "readonly").get(id)); },
     async get(key) { return req(tx("meta", "readonly").get(key)); },
     async set(key, value) { await req(tx("meta", "readwrite").put(value, key)); },
     async clear() {
@@ -66,6 +68,8 @@ export function memoryStore() {
     async addResult(r) { results.set(r.id, structuredClone(r)); },
     async recent(limit = 50) { return [...results.values()].sort((a, b) => b.at - a.at).slice(0, limit); },
     async count() { return results.size; },
+    async all() { return [...results.values()].map((r) => structuredClone(r)); },
+    async getResult(id) { return results.has(id) ? structuredClone(results.get(id)) : undefined; },
     async get(key) { return meta.has(key) ? structuredClone(meta.get(key)) : undefined; },
     async set(key, value) { meta.set(key, structuredClone(value)); },
     async clear() { results.clear(); meta.clear(); }

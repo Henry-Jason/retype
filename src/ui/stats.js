@@ -21,6 +21,21 @@ const bestLabel = (key) => {
 };
 const shortDate = (t) => new Date(t).toLocaleDateString(undefined, { day: "numeric", month: "short" });
 
+function accountCard(a) {
+  if (!a || !a.enabled) return "";
+  if (!a.user) {
+    return `<div class="scard wide acctcard"><h2>Account</h2>
+      <div class="sub">You're typing as a guest, so your progress lives in this browser only. Sign in with Google to keep it in your account and carry it to any device. Everything you've typed so far comes with you.</div>
+      <div class="sactions"><button type="button" class="go primary" id="acctIn">Sign in with Google</button></div></div>`;
+  }
+  const status = a.sync === "syncing" ? "Syncing…" : a.sync === "error" ? `Not synced yet (${esc(a.syncError)}). It will try again next time.` : "Everything is saved to your account.";
+  return `<div class="scard wide acctcard"><h2>Account</h2>
+    <div class="acctrow">${a.user.photo ? `<img src="${esc(a.user.photo)}" alt="" width="40" height="40" referrerpolicy="no-referrer">` : ""}
+      <div><div class="big" style="font-size:22px">${esc(a.user.name || a.user.email)}</div><div class="sub">${esc(a.user.email)} · <i class="dot ${esc(a.sync)}"></i> ${status}</div></div></div>
+    <div class="sub">Signing out keeps everything in your account; this browser starts fresh as a guest.</div>
+    <div class="sactions"><button type="button" class="go" id="acctOut">Sign out</button></div></div>`;
+}
+
 export function renderStats(view, state, handlers) {
   const rk = rankFrom(state.recent);
   const st = streak(state.days, dayKey(Date.now()));
@@ -54,8 +69,9 @@ export function renderStats(view, state, handlers) {
       <h1>Your desk</h1>
       <button type="button" class="go" id="statsBack">Back to typing <kbd>esc</kbd></button>
     </div>
-    <p class="lede">Everything here is saved in this browser only. Score is wpm × accuracy², so accuracy counts for more than speed: 80 wpm at 100% beats 100 wpm at 89%.</p>
+    <p class="lede">${handlers.account?.user ? "Everything here is saved to your account." : "Everything here is saved in this browser only."} Score is wpm × accuracy², so accuracy counts for more than speed: 80 wpm at 100% beats 100 wpm at 89%.</p>
     <div class="sgrid">
+      ${accountCard(handlers.account)}
       <div class="scard"><h2>Rank</h2>${rankCard}<div class="sub">From your last ${Math.min(10, Math.max(rk.count, 0))} ranked galleys. Practice, code, flow, sudden death and galleys under 15 words don't count.</div><div class="ladder">${ladder}</div></div>
       <div class="scard"><h2>Streak</h2><div class="big">${st.count} ${st.count === 1 ? "day" : "days"}</div>
         <div class="sub">Best ${Math.max(state.bestStreak, st.count)} ${Math.max(state.bestStreak, st.count) === 1 ? "day" : "days"}. Any finished galley counts for the day.</div>
@@ -75,10 +91,12 @@ export function renderStats(view, state, handlers) {
         <div class="sub">Built up over every galley you've typed. A word drops off once you've typed it cleanly and at your normal pace a few times.</div>
         ${weak.length ? `<div class="chips">${weak.map((w) => `<span>${esc(w.word)}<i>${w.trouble.toFixed(1)}</i></span>`).join("")}</div>
         <div class="sactions"><button type="button" class="go primary" id="statsPractice">Practise these</button><button type="button" class="go" id="statsMix">Mix them into galleys</button></div>` : `<div class="sub">Nothing flagged yet.</div>`}</div>
-      <div class="scard wide"><h2>Data</h2><div class="sub">Clearing removes every saved galley, best, streak and weak word from this browser. Settings stay.</div>
+      <div class="scard wide"><h2>Data</h2><div class="sub">${handlers.account?.user ? "Clearing removes every galley, best, streak and weak word from your account and this browser. It can't be undone." : "Clearing removes every saved galley, best, streak and weak word from this browser. Settings stay."}</div>
         <div class="sactions"><button type="button" class="go danger" id="statsReset">Clear my progress</button></div></div>
     </div>`;
   view.querySelector("#statsBack").onclick = handlers.onBack;
+  view.querySelector("#acctIn")?.addEventListener("click", handlers.onSignIn);
+  view.querySelector("#acctOut")?.addEventListener("click", handlers.onSignOut);
   view.querySelector("#statsDaily").onclick = handlers.onDaily;
   if (weak.length) {
     view.querySelector("#statsPractice").onclick = () => handlers.onPractice(weak.slice(0, 10).map((w) => w.word));

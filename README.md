@@ -42,6 +42,32 @@ Everything runs in the browser. Nothing is sent anywhere yet.
 - **Personal bests** are kept per kind of galley (length, word list, punctuation, numbers, sudden death; per script in code mode) and need at least 10 words.
 - **Streak**: any finished galley counts for its day. One missed day is forgiven as long as there wasn't another forgiven day in the week before it.
 
+## Accounts
+
+Sign in with Google to keep your progress in your account and on every device. Guests keep everything in the browser as before; signing in brings all of it along.
+
+- **Turning it on:** paste the web app's config into `src/firebase-config.js`. While it's `null`, the app is guest-only and Firebase isn't even downloaded.
+- **What's stored:** `users/{uid}` holds bests, weak words, streak days and totals; `users/{uid}/results/{id}` holds one document per galley, keystroke log included (as a string: Firestore can't store arrays inside arrays).
+- **Sync:** galleys are uploaded as they finish and folded into the account inside a transaction, so two devices can't overwrite each other's totals. The account remembers the last 300 galley ids it has counted, so a retried upload never counts twice. A galley finished offline is retried at the next sync.
+- **Signing out** clears this browser; the account keeps everything. **Clearing progress** while signed in clears the account too.
+- **Security rules** (`firestore.rules`): each person can read and write only their own documents, results can't be edited once written, and everything else is closed.
+
+### Testing it
+
+```bash
+npm test             # everything, including sync against an in-memory fake cloud
+npm run test:rules   # security rules against the Firestore emulator (needs Java 11+)
+npm run emulators    # Auth + Firestore emulators, then in another terminal:
+npm run dev:emulators  # the app pointed at the emulators, with fake Google sign-in
+```
+
+### Deploying
+
+```bash
+npm run build
+firebase deploy --only hosting,firestore:rules
+```
+
 ## Layout of the code
 
 ```
@@ -54,13 +80,17 @@ src/
     code.js         scripts for code mode, Python highlighting
     progress.js     score, ranks, personal bests, streaks, weak-word profile
     challenge.js    challenge links (encode/decode) and the daily seed
+    sync.js         folding galleys into the account, merging guest data
     result.js       the stored shape of a finished galley
   storage/
     store.js             IndexedDB (memory fallback): results + small records
     progress-service.js  folds a result into progress and saves it
+    account-sync.js      what to upload and when; signing in, out and clearing
+    cloud.js             Firebase Auth and Firestore (loaded only when accounts are on)
   ui/          the interface: app.js (typing desk), chart, stats page, settings, share card, sound
   data/        word lists
-tests/         Vitest suites for core and storage
+tests/         Vitest suites for core, storage and sync
+tests-rules/   security-rule tests (Firestore emulator)
 ```
 
 ### Ready for accounts later

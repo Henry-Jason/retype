@@ -1,0 +1,54 @@
+rules_version = '2';
+
+// Each person can read and write only their own data:
+//   users/{uid}                  the account document (bests, weak words, streak days, totals)
+//   users/{uid}/results/{id}     one document per finished galley; never edited once written
+// Everything else is closed. Leaderboards will need their own collection and rules later.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    match /users/{uid} {
+      function validAccount(d) {
+        return d.keys().hasOnly(['v', 'bests', 'weak', 'days', 'bestStreak', 'totals', 'folded', 'name', 'updated'])
+          && d.v is int
+          && d.bests is map
+          && d.weak is map
+          && d.days is list && d.days.size() <= 400
+          && d.bestStreak is number && d.bestStreak >= 0
+          && d.totals is map
+          && (!('folded' in d) || (d.folded is list && d.folded.size() <= 300))
+          && (!('name' in d) || (d.name is string && d.name.size() <= 40));
+      }
+
+      allow read: if isOwner(uid);
+      allow create, update: if isOwner(uid) && validAccount(request.resource.data);
+      allow delete: if isOwner(uid);
+
+      match /results/{rid} {
+        function validResult(d) {
+          return d.id == rid
+            && d.userId == uid
+            && d.at is int
+            && d.kind in ['normal', 'mix', 'practice', 'code', 'daily', 'challenge']
+            && d.wpm is number && d.wpm >= 0 && d.wpm < 1000
+            && d.acc is number && d.acc >= 0 && d.acc <= 100
+            && d.keys is string && d.keys.size() < 500000
+            && d.targets is list && d.targets.size() <= 2000;
+        }
+
+        allow read: if isOwner(uid);
+        allow create: if isOwner(uid) && validResult(request.resource.data);
+        allow update: if false;
+        allow delete: if isOwner(uid);
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
