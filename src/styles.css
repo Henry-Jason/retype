@@ -386,3 +386,5 @@ details summary{cursor:pointer;color:var(--ink)}
 .boardhead h2{margin:0}
 .tbl td.grade{font-weight:700;font-family:var(--ui);letter-spacing:.04em}
 .tbl td.gSS,.tbl td.gS{color:var(--pencil)}
+/* finish-band badges: one even gap between them */
+.done .pb,.done .rankup,.done .rankup:first-child,.done .xp,.done .ppb{margin:8px 8px 0 0;vertical-align:middle}
