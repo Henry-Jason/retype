@@ -16,6 +16,7 @@ import { playKey, playErr } from "./sound.js";
 import { renderChart, drawChart } from "./chart.js";
 import { drawCard, downloadCard } from "./share.js";
 import { renderStats, bestLabel } from "./stats.js";
+import { renderBoards, ordinal } from "./boards.js";
 import { levelFrom } from "../core/levels.js";
 import { cleanName } from "../core/sync.js";
 import { $, esc, pad, stampDate, uuid } from "./util.js";
@@ -73,6 +74,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
 
   /* ---------- header ---------- */
   const ICON_GEAR = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`;
+  const ICON_PODIUM = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21V8h6v13M3 21v-8h6M15 21v-5h6v5M2 21h20M12 2.5l.9 1.8 2 .3-1.45 1.4.35 2-1.8-.95-1.8.95.35-2L9.1 4.6l2-.3z"/></svg>`;
   const ICON_CHART = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>`;
   function renderConfig() {
     const box = $("#config"); box.replaceChildren();
@@ -141,7 +143,8 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
         nav("navbtn", "Sign in", signIn, "signIn", "Sign in with Google to keep your progress on every device");
       }
     }
-    nav("navbtn", `${ICON_CHART}Stats`, () => { location.hash = "stats"; }, "openStats");
+    nav("navbtn" + (location.hash === "#boards" ? " on" : ""), `${ICON_PODIUM}Boards`, () => { location.hash = "boards"; }, "openBoards");
+    nav("navbtn" + (location.hash === "#stats" ? " on" : ""), `${ICON_CHART}Stats`, () => { location.hash = "stats"; }, "openStats");
     nav("navbtn", `${ICON_GEAR}Settings`, openSettings, "openSettings");
   }
 
@@ -164,7 +167,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
         if (e) { note.textContent = "Your first attempt today is already on the board; retries don't change it."; return; }
       } catch { /* try again */ }
     }
-    note.textContent = "Not on the board yet. It may still be checking; look on the Stats page in a minute.";
+    note.textContent = "Not on the board yet. It may still be checking; look on the Boards page in a minute.";
   }
   async function showPpPlace(result, band) {
     if (!cloud?.ppEntry || !band) return;
@@ -184,7 +187,6 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     }
     note.textContent = "The PP board hasn't caught up with this galley yet; it'll be there shortly.";
   }
-  const ordinal = (n) => n + (n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] || "th");
 
   /* ---------- accounts ---------- */
   async function runSync() {
@@ -918,11 +920,32 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       if (c) { newTest(challengeSource(c)); }
       else { notice = "That challenge link didn't work, so here's an ordinary galley."; newTest({ kind: "normal" }); }
     }
-    const stats = location.hash === "#stats";
-    statsView.hidden = !stats; typingView.hidden = stats;
-    if (stats) {
+    const page = location.hash === "#stats" ? "stats" : location.hash === "#boards" ? "boards" : null;
+    // both pages draw into the same view; the typing view hides behind either
+    statsView.hidden = !page; typingView.hidden = !!page;
+    for (const id of ["openStats", "openBoards"]) $("#" + id)?.classList.toggle("on", page === id.slice(4).toLowerCase());
+    const back = () => { location.hash = ""; };
+    const boardHandlers = {
+      signedIn: !!user,
+      load: cloud?.dailyBoard ? async (which, n) => ({
+        rows: which === "pp" ? await cloud.ppBoard(n) : await cloud.dailyBoard(dayKey(Date.now()), n), me: user?.uid
+      }) : null,
+      place: cloud?.ppEntry && user ? async (which) => {
+        const day = dayKey(Date.now());
+        const entry = which === "pp" ? await cloud.ppEntry(user.uid) : await cloud.dailyEntry(day, user.uid);
+        if (!entry) return null;
+        const p = which === "pp" ? await cloud.ppPlace(entry.pp) : await cloud.dailyPlace(day, entry.score);
+        return { ...p, entry };
+      } : null
+    };
+    if (page === "boards") {
+      input.blur();
+      renderBoards(statsView, { ...boardHandlers, onBack: back, onDaily: () => { location.hash = ""; newTest(dailySource()); }, onSignIn: signIn });
+      window.scrollTo(0, 0);
+    } else if (page === "stats") {
       input.blur();
       renderStats(statsView, state, {
+        ...boardHandlers,
         onBack: () => { location.hash = ""; },
         onDaily: () => { location.hash = ""; newTest(dailySource()); },
         onPractice: (words) => { location.hash = ""; newTest({ kind: "practice", words: shuffleSpread(words.flatMap((w) => [w, w, w]), mulberry32(randomSeed())), label: `Practice · ${words.length} trouble words ×3` }); },
@@ -933,9 +956,6 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
           state = { ...emptyState(), profile: state.profile }; await store.set("profile", state.profile); updateStanding(); route();
         },
         account: { enabled: accountsEnabled, user, sync, syncError, name: boardName },
-        loadBoard: cloud?.dailyBoard ? async (which) => ({
-          rows: which === "pp" ? await cloud.ppBoard(25) : await cloud.dailyBoard(dayKey(Date.now()), 25), me: user?.uid, signedIn: !!user
-        }) : null,
         onRename: async (raw) => {
           const name = cleanName(raw);
           if (!name) return "Use 2 to 20 characters.";

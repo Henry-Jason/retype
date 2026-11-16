@@ -388,3 +388,9 @@ details summary{cursor:pointer;color:var(--ink)}
 .tbl td.gSS,.tbl td.gS{color:var(--pencil)}
 /* finish-band badges: one even gap between them */
 .done .pb,.done .rankup,.done .rankup:first-child,.done .xp,.done .ppb{margin:8px 8px 0 0;vertical-align:middle}
+.navbtn.on{border-color:var(--desk-ink)}
+.placeline{margin:4px 0 8px}
+.placeline a{color:var(--pencil);text-decoration:none;font-weight:600}
+.placeline a:hover{text-decoration:underline}
+.boardpage .boardhead{margin-bottom:6px}
+.boardpage #boardAbout{margin-bottom:12px;max-width:72ch}

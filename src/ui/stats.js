@@ -1,6 +1,7 @@
-// The stats page: level, PP and rank, the boards, streak, totals, recent galleys, personal bests and the weak-word profile.
+// The stats page: level, PP and rank, streak, totals, recent galleys, personal bests and the weak-word profile.
 import { streak, topWeak, dayKey, isRanked } from "../core/progress.js";
 import { RANKS, rankFrom, grade, PP_RULES } from "../core/pp.js";
+import { placeLine } from "./boards.js";
 import { LISTS } from "../core/words.js";
 import { SNIPPETS } from "../core/code.js";
 import { esc, fmtDuration } from "./util.js";
@@ -59,34 +60,6 @@ function levelCard(xp) {
 
 const fmtPp = (x) => Math.round(x).toLocaleString("en-IE");
 
-async function renderBoard(box, handlers, which) {
-  if (!box) return;
-  if (!handlers.loadBoard) { box.textContent = "The boards need an internet connection to load."; return; }
-  box.innerHTML = `<div class="sub">Loading…</div>`;
-  try {
-    const { rows, me, signedIn } = await handlers.loadBoard(which);
-    if (!box.isConnected || box.dataset.which !== which) return;
-    let list;
-    if (which === "pp") {
-      list = rows.length
-        ? `<div class="tblwrap"><table class="tbl board"><thead><tr><th class="num">#</th><th>Name</th><th class="num">PP</th><th class="num">Best galley</th><th class="num">Galleys</th></tr></thead><tbody>${rows.map((r, i) =>
-            `<tr class="${r.uid === me ? "me" : ""}"><td class="num">${i + 1}</td><td>${esc(r.name)}</td><td class="num">${fmtPp(r.pp)}</td><td class="num">${r.best.toFixed(1)}</td><td class="num">${r.count}</td></tr>`).join("")}</tbody></table></div>`
-        : `<div class="sub">Nobody's on the PP board yet.</div>`;
-      const foot = signedIn ? "Your best 100 galleys make up your total; each is re-scored from its keystrokes on the server first." : "Sign in to put your PP on the board. Each galley is re-scored from its keystrokes on the server first.";
-      box.innerHTML = `${list}<div class="sub" style="margin-top:8px">${foot}</div>`;
-    } else {
-      list = rows.length
-        ? `<div class="tblwrap"><table class="tbl board"><thead><tr><th class="num">#</th><th>Name</th><th class="num">Score</th><th class="num">WPM</th><th class="num">Accuracy</th><th></th></tr></thead><tbody>${rows.map((r, i) =>
-            `<tr class="${r.uid === me ? "me" : ""}"><td class="num">${i + 1}</td><td>${esc(r.name)}</td><td class="num">${r.score.toFixed(1)}</td><td class="num">${Math.round(r.wpm)}</td><td class="num">${r.acc.toFixed(1)}%</td><td>${r.clean ? "perfect" : ""}</td></tr>`).join("")}</tbody></table></div>`
-        : `<div class="sub">Nobody's on today's board yet. Be first.</div>`;
-      const foot = signedIn ? "Your first attempt each day goes on the board once it's been checked." : "Sign in to put your daily on the board.";
-      box.innerHTML = `${list}<div class="sub" style="margin-top:8px">Every entry is re-scored from its keystrokes on the server. ${foot}</div>`;
-    }
-  } catch (e) {
-    if (box.isConnected) box.textContent = "Couldn't load the board right now.";
-  }
-}
-
 function ppCard(top) {
   const rk = rankFrom(top), R = PP_RULES;
   const head = rk.rank
@@ -95,7 +68,7 @@ function ppCard(top) {
        <div class="meter"><i style="width:${(rk.progress * 100).toFixed(0)}%"></i></div>`
     : `<div class="big">Unranked</div><div class="sub">Finish a galley of ${R.minWords}+ words to earn your first PP and a rank.</div>`;
   const ladder = RANKS.slice().reverse().map((r) => `<div class="${rk.rank && r.name === rk.rank.name ? "on" : ""}"><span>${esc(r.name)}</span><span>${r.min.toLocaleString("en-IE")} PP</span></div>`).join("");
-  return `<div class="scard"><h2>Rank</h2>${head}<div class="ladder">${ladder}</div></div>`;
+  return `<div class="scard"><h2>Rank</h2>${head}<div class="sub placeline" id="placeLine">${rk.rank ? "" : `<a href="#boards">See the boards →</a>`}</div><div class="ladder">${ladder}</div></div>`;
 }
 
 function topPlaysCard(top) {
@@ -144,10 +117,6 @@ export function renderStats(view, state, handlers) {
     <div class="sgrid">
       ${accountCard(handlers.account)}
       ${levelCard(state.xp)}
-      <div class="scard wide" id="boardCard"><div class="boardhead"><h2>Leaderboards</h2>
-        <div class="seg" role="tablist"><button type="button" role="tab" data-board="pp">PP</button><button type="button" role="tab" data-board="daily">Today's daily</button></div></div>
-        <div id="boardBox" class="sub" data-which="pp">Loading…</div>
-        <div class="sactions"><button type="button" class="go" id="statsDaily2">Type today's daily</button></div></div>
       ${ppCard(top)}
       <div class="scard"><h2>Streak</h2><div class="big">${st.count} ${st.count === 1 ? "day" : "days"}</div>
         <div class="sub">Best ${Math.max(state.bestStreak, st.count)} ${Math.max(state.bestStreak, st.count) === 1 ? "day" : "days"}. Any finished galley counts for the day.</div>
@@ -175,24 +144,13 @@ export function renderStats(view, state, handlers) {
   view.querySelector("#acctIn")?.addEventListener("click", handlers.onSignIn);
   view.querySelector("#acctOut")?.addEventListener("click", handlers.onSignOut);
   view.querySelector("#statsDaily").onclick = handlers.onDaily;
-  view.querySelector("#statsDaily2").onclick = handlers.onDaily;
   const save = view.querySelector("#saveName");
   if (save) save.onclick = async () => {
     const msg = view.querySelector("#nameMsg");
     msg.textContent = "Saving…";
     msg.textContent = await handlers.onRename(view.querySelector("#boardName").value);
   };
-  const boardBox = view.querySelector("#boardBox"), tabs = [...view.querySelectorAll("[data-board]")];
-  const showBoard = (which) => {
-    boardBox.dataset.which = which;
-    for (const t of tabs) t.setAttribute("aria-selected", String(t.dataset.board === which));
-    try { localStorage.setItem("retype-board", which); } catch { /* fine */ }
-    renderBoard(boardBox, handlers, which);
-  };
-  for (const t of tabs) t.onclick = () => showBoard(t.dataset.board);
-  let which = "pp";
-  try { which = localStorage.getItem("retype-board") === "daily" ? "daily" : "pp"; } catch { /* fine */ }
-  showBoard(which);
+  if (top.length) placeLine(view.querySelector("#placeLine"), handlers.signedIn ? handlers : {});
   if (weak.length) {
     view.querySelector("#statsPractice").onclick = () => handlers.onPractice(weak.slice(0, 10).map((w) => w.word));
     view.querySelector("#statsMix").onclick = () => handlers.onMix(weak.slice(0, 12).map((w) => w.word));

@@ -69,7 +69,7 @@ Levels run from 0 with no cap; level n needs `100 + 20n` XP to clear. XP comes f
 
 Performance points work like osu!'s. Each galley of 15+ words (plain, mixed, daily or challenge; not practice, code, flow or sudden death) earns `100 × (wpm/100)^1.5 × (acc/100)^12 × difficulty × length`. Difficulty comes from the words actually typed (their frequency rank, plus a little for capitals, punctuation and numbers): about 0.85 for the top 200, 1 for the top 1,000, 1.2 for the top 5,000. Length runs from 0.8 to 1.2 at 100 words. Your total is your top 100 galleys, each weighted 0.95× the one above. Ranks (15 of them, Copy boy to Fourth estate, 0 to 11,000 PP, each step about 30% further than the last) come from the total, and each galley gets a letter grade from its accuracy (SS 100%, S 98%, A 95%, B 90%, C 85%). Rules live in `src/core/pp.js`; the top 100 is kept locally and in the account document (`top`).
 
-The all-time PP board (`boards/pp/entries/{uid}`) is written only by the `postPp` function, which re-scores every saved galley from its keystrokes. `backfillPp` (callable, once per account) scores galleys saved before PP existed, and `clearPp` removes the entry when progress is cleared.
+Both boards have their own page (`#boards`, the Boards button); Stats just shows your place. The all-time PP board (`boards/pp/entries/{uid}`) is written only by the `postPp` function, which re-scores every saved galley from its keystrokes. `backfillPp` (callable, once per account) scores galleys saved before PP existed, and `clearPp` removes the entry when progress is cleared.
 
 ## Daily board
 
