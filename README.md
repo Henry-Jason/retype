@@ -61,12 +61,24 @@ npm run emulators    # Auth + Firestore emulators, then in another terminal:
 npm run dev:emulators  # the app pointed at the emulators, with fake Google sign-in
 ```
 
+## Levels
+
+Levels run from 0 with no cap; level n needs `100 + 20n` XP to clear. XP comes from typing (one point per five correct keys), accuracy, speed (capped at 200 wpm), perfect galleys, personal bests, rank-ups, the first galley of the day, the streak and the daily. Bonuses need at least 10 words. The XP for each galley is worked out once and stored on the result, so the account adds exactly what the browser showed. Rules live in `src/core/levels.js`.
+
+## Daily board
+
+Signed-in players' first daily of the day goes on `boards/daily-{day}`. Nobody can write to a board directly: the `postDaily` Cloud Function (in `functions/`) picks up each new daily result, rebuilds the galley from its keystroke log with `src/core/verify.js`, checks the words match the day's seed, recomputes wpm, accuracy and score, rejects impossible typing (over 250 wpm, too many sub-12 ms gaps), and only then writes the entry. Names come from `profiles/{uid}` (2 to 20 characters, set in Stats); `renameOnBoards` updates the last two days when someone renames.
+
+`functions/shared` is a copy of `src/core` and `src/data`, made by `scripts/sync-functions.mjs` before every functions deploy, so the browser and the server score with the same code.
+
 ### Deploying
 
 ```bash
-npm run build
-firebase deploy --only hosting,firestore:rules
+cd functions && npm install && cd ..   # once
+npm run deploy   # tests, build, then hosting + rules + functions
 ```
+
+Functions need the Blaze plan.
 
 ## Layout of the code
 

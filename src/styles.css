@@ -364,3 +364,16 @@ header .config{flex-basis:100%}
 .acctrow img{border-radius:50%;flex:none}
 .toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);max-width:min(560px,calc(100% - 32px));
   background:var(--desk-ink);color:var(--desk);padding:10px 16px;border-radius:8px;font-size:14px;line-height:1.4;box-shadow:0 10px 30px -10px rgba(0,0,0,.5);z-index:30}
+
+/* levels, toasts, boards */
+.mark small .lv{font:inherit;font-weight:700;color:var(--desk-pencil)}
+.lvrow{display:flex;gap:20px;align-items:center;flex-wrap:wrap}
+.lvbar{flex:1;min-width:220px;display:flex;flex-direction:column;gap:6px}
+.xplist{margin:8px 0;padding-left:18px;line-height:1.6}
+details summary{cursor:pointer;color:var(--ink)}
+.namerow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.namerow .chin{width:200px}
+.tbl.board tr.me td{font-weight:700;color:var(--pencil)}
+.done .xp{display:inline-block;margin:8px 8px 0 0;font:700 12px var(--ui);letter-spacing:.08em;color:var(--ink);border:1.5px solid var(--ink-muted);padding:3px 8px;border-radius:4px}
+.toast.pb{background:var(--pencil);color:var(--on-pencil)}
+.toast.lv{background:var(--ink);color:var(--paper)}

@@ -3,6 +3,7 @@ import { RANKS, rankFrom, streak, topWeak, dayKey, isRanked } from "../core/prog
 import { LISTS } from "../core/words.js";
 import { SNIPPETS } from "../core/code.js";
 import { esc, fmtDuration } from "./util.js";
+import { levelFrom, XP_RULES } from "../core/levels.js";
 
 export function resultLabel(r) {
   if (r.kind === "code") return `code · ${SNIPPETS.find((s) => s.id === r.snippet)?.title || r.snippet}`;
@@ -13,7 +14,7 @@ export function resultLabel(r) {
   const extra = [r.kind === "mix" ? "mixed" : "", r.list && r.list !== "200" ? (LISTS[r.list]?.label || r.list).toLowerCase() : "", r.punct ? "punctuation" : "", r.nums ? "numbers" : "", r.sudden ? "sudden death" : ""].filter(Boolean);
   return [base, ...extra].join(" · ");
 }
-const bestLabel = (key) => {
+export const bestLabel = (key) => {
   if (key.startsWith("code:")) return `code · ${SNIPPETS.find((s) => s.id === key.slice(5))?.title || key.slice(5)}`;
   const [len, list, ...rest] = key.split(" ");
   const l = len.endsWith("w") ? `${len.slice(0, -1)} words` : len.endsWith("s") ? `${len.slice(0, -1)} seconds` : len;
@@ -32,8 +33,44 @@ function accountCard(a) {
   return `<div class="scard wide acctcard"><h2>Account</h2>
     <div class="acctrow">${a.user.photo ? `<img src="${esc(a.user.photo)}" alt="" width="40" height="40" referrerpolicy="no-referrer">` : ""}
       <div><div class="big" style="font-size:22px">${esc(a.user.name || a.user.email)}</div><div class="sub">${esc(a.user.email)} · <i class="dot ${esc(a.sync)}"></i> ${status}</div></div></div>
+    <div class="namerow"><label for="boardName" class="sub">Name on the boards</label>
+      <input id="boardName" class="chin" maxlength="20" value="${esc(a.name || "")}" placeholder="2 to 20 characters"><button type="button" class="go" id="saveName">Save</button><span class="sub" id="nameMsg"></span></div>
     <div class="sub">Signing out keeps everything in your account; this browser starts fresh as a guest.</div>
     <div class="sactions"><button type="button" class="go" id="acctOut">Sign out</button></div></div>`;
+}
+
+function levelCard(xp) {
+  const L = levelFrom(xp), R = XP_RULES;
+  return `<div class="scard wide"><h2>Level</h2>
+    <div class="lvrow"><div class="big">Level ${L.level}</div>
+      <div class="lvbar"><div class="meter"><i style="width:${(L.progress * 100).toFixed(1)}%"></i></div>
+      <div class="sub">${L.into.toLocaleString()} / ${L.need.toLocaleString()} XP · ${(L.need - L.into).toLocaleString()} to level ${L.level + 1} · ${L.xp.toLocaleString()} XP in all</div></div></div>
+    <details class="sub"><summary>How XP is earned</summary>
+      <ul class="xplist">
+        <li><b>Typing:</b> ${R.perWord} XP for every correct word you type, in any galley.</li>
+        <li><b>Accuracy:</b> +10% of that at 95%, +25% at 98%, +50% at 100%.</li>
+        <li><b>Speed:</b> +1 XP per ${R.speedPer} wpm, up to ${R.speedCap} wpm.</li>
+        <li><b>Perfect galley:</b> +${R.perfect}. <b>New personal best:</b> +${R.best}. <b>Rank up:</b> +${R.rankUp}.</li>
+        <li><b>First galley of the day:</b> +${R.firstOfDay}, plus ${R.streakStep} for each day of your streak, up to a week.</li>
+        <li><b>Daily galley:</b> +${R.daily} for your first attempt.</li>
+      </ul>Bonuses need a galley of ${R.minWords}+ words. Each level needs 20 XP more than the last, and there's no top level.</details></div>`;
+}
+
+async function renderBoard(box, handlers) {
+  if (!box) return;
+  if (!handlers.loadBoard) { box.textContent = "The board needs the internet connection to load."; return; }
+  try {
+    const { rows, me, signedIn } = await handlers.loadBoard();
+    if (!box.isConnected) return;
+    const list = rows.length
+      ? `<div class="tblwrap"><table class="tbl board"><thead><tr><th class="num">#</th><th>Name</th><th class="num">Score</th><th class="num">WPM</th><th class="num">Accuracy</th><th></th></tr></thead><tbody>${rows.map((r, i) =>
+          `<tr class="${r.uid === me ? "me" : ""}"><td class="num">${i + 1}</td><td>${esc(r.name)}</td><td class="num">${r.score.toFixed(1)}</td><td class="num">${Math.round(r.wpm)}</td><td class="num">${r.acc.toFixed(1)}%</td><td>${r.clean ? "perfect" : ""}</td></tr>`).join("")}</tbody></table></div>`
+      : `<div class="sub">Nobody's on today's board yet. Be first.</div>`;
+    const foot = signedIn ? "Your first attempt each day goes on the board once it's been checked." : "Sign in to put your daily on the board.";
+    box.innerHTML = `${list}<div class="sub" style="margin-top:8px">Every entry is re-scored from its keystrokes on the server. ${foot}</div>`;
+  } catch (e) {
+    if (box.isConnected) box.textContent = "Couldn't load the board right now.";
+  }
 }
 
 export function renderStats(view, state, handlers) {
@@ -72,6 +109,9 @@ export function renderStats(view, state, handlers) {
     <p class="lede">${handlers.account?.user ? "Everything here is saved to your account." : "Everything here is saved in this browser only."} Score is wpm × accuracy², so accuracy counts for more than speed: 80 wpm at 100% beats 100 wpm at 89%.</p>
     <div class="sgrid">
       ${accountCard(handlers.account)}
+      ${levelCard(state.xp)}
+      <div class="scard wide" id="boardCard"><h2>Today's daily board</h2><div id="boardBox" class="sub">Loading…</div>
+        <div class="sactions"><button type="button" class="go" id="statsDaily2">Type today's daily</button></div></div>
       <div class="scard"><h2>Rank</h2>${rankCard}<div class="sub">From your last ${Math.min(10, Math.max(rk.count, 0))} ranked galleys. Practice, code, flow, sudden death and galleys under 15 words don't count.</div><div class="ladder">${ladder}</div></div>
       <div class="scard"><h2>Streak</h2><div class="big">${st.count} ${st.count === 1 ? "day" : "days"}</div>
         <div class="sub">Best ${Math.max(state.bestStreak, st.count)} ${Math.max(state.bestStreak, st.count) === 1 ? "day" : "days"}. Any finished galley counts for the day.</div>
@@ -98,6 +138,14 @@ export function renderStats(view, state, handlers) {
   view.querySelector("#acctIn")?.addEventListener("click", handlers.onSignIn);
   view.querySelector("#acctOut")?.addEventListener("click", handlers.onSignOut);
   view.querySelector("#statsDaily").onclick = handlers.onDaily;
+  view.querySelector("#statsDaily2").onclick = handlers.onDaily;
+  const save = view.querySelector("#saveName");
+  if (save) save.onclick = async () => {
+    const msg = view.querySelector("#nameMsg");
+    msg.textContent = "Saving…";
+    msg.textContent = await handlers.onRename(view.querySelector("#boardName").value);
+  };
+  renderBoard(view.querySelector("#boardBox"), handlers);
   if (weak.length) {
     view.querySelector("#statsPractice").onclick = () => handlers.onPractice(weak.slice(0, 10).map((w) => w.word));
     view.querySelector("#statsMix").onclick = () => handlers.onMix(weak.slice(0, 12).map((w) => w.word));

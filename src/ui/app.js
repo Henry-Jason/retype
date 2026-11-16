@@ -9,12 +9,14 @@ import { buildResult } from "../core/result.js";
 import { rankFrom, streak, dayKey, topWeak, score } from "../core/progress.js";
 import { encodeChallenge, decodeChallenge, dailySeed, compare, DAILY } from "../core/challenge.js";
 import { record, emptyState, loadProgress } from "../storage/progress-service.js";
-import { syncAccount, pushGalley, forgetAccount, clearAccount } from "../storage/account-sync.js";
+import { syncAccount, pushGalley, forgetAccount, clearAccount, ensureProfile } from "../storage/account-sync.js";
 import { DEFAULTS, PRESETS, LIMITS, SLIDE, FS, FONTS, SETTINGS, saveSettings } from "./settings.js";
 import { playKey, playErr } from "./sound.js";
 import { renderChart, drawChart } from "./chart.js";
 import { drawCard, downloadCard } from "./share.js";
-import { renderStats } from "./stats.js";
+import { renderStats, bestLabel } from "./stats.js";
+import { levelFrom } from "../core/levels.js";
+import { cleanName } from "../core/sync.js";
 import { $, esc, pad, stampDate, uuid } from "./util.js";
 
 export function startApp({ cfg, store, progress, accountsEnabled = false, cloudReady = Promise.resolve(null) }) {
@@ -25,7 +27,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
 
   let state = progress;
   // accounts: cloud is the Firebase layer once loaded; user is who's signed in
-  let cloud = null, user = null, sync = "idle", syncError = "";
+  let cloud = null, user = null, sync = "idle", syncError = "", boardName = "";
   let test, wordEls, cache, center, rows, ticker, idleTimer, editing = null, drawerOpen = false, lastChart = null;
   const galleyNo = () => pad(state.totals.galleys + 1, 4);
   let notice = "";
@@ -46,15 +48,25 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
   function updateStanding() {
     const rk = rankFrom(state.recent), st = streak(state.days, dayKey(Date.now()));
     const bits = [];
+    if (state.totals.galleys || state.xp) bits.push(`<b class="lv" title="${levelFrom(state.xp).into} / ${levelFrom(state.xp).need} XP to the next level">Lv ${levelFrom(state.xp).level}</b>`);
     if (rk.rank) bits.push(`<b>${esc(rk.rank.name)}</b>`);
     else if (state.totals.galleys) bits.push("unranked");
     if (st.count) bits.push(`${st.count}-day streak`);
     $("#standing").innerHTML = bits.length ? bits.join('<span class="sep">·</span>') : user ? "" : "guest";
     renderNavs();
   }
-  function toast(msg) {
-    const t = $("#toast"); t.textContent = msg; t.hidden = false;
-    clearTimeout(toast.t); toast.t = setTimeout(() => { t.hidden = true; }, 4000);
+  // one toast at a time; kind "pb" or "lv" colours it
+  const toastQueue = [];
+  function toast(msg, kind = "") {
+    toastQueue.push({ msg, kind });
+    if (!toast.busy) nextToast();
+  }
+  function nextToast() {
+    const t = $("#toast"), n = toastQueue.shift();
+    if (!n) { toast.busy = false; return; }
+    toast.busy = true;
+    t.textContent = n.msg; t.className = "toast" + (n.kind ? " " + n.kind : ""); t.hidden = false;
+    setTimeout(() => { t.hidden = true; setTimeout(nextToast, 250); }, n.kind ? 3600 : 4200);
   }
 
   /* ---------- header ---------- */
@@ -131,6 +143,29 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     nav("navbtn", `${ICON_GEAR}Settings`, openSettings, "openSettings");
   }
 
+  /* ---------- the daily board ---------- */
+  // The Cloud Function checks the galley and posts it a few seconds after it's saved.
+  async function showBoardPlace(result, band) {
+    if (!cloud?.dailyEntry || !band) return;
+    const note = document.createElement("div"); note.className = "note"; note.textContent = "Checking your daily for the board…";
+    band.appendChild(note);
+    for (let i = 0; i < 10; i++) {
+      await new Promise((ok) => setTimeout(ok, i ? 2000 : 1500));
+      if (!note.isConnected) return;
+      try {
+        const e = await cloud.dailyEntry(result.day, user.uid);
+        if (e && e.resultId === result.id) {
+          const p = await cloud.dailyPlace(result.day, e.score);
+          note.textContent = `On today's board: ${ordinal(p.place)} of ${p.of}.`;
+          return;
+        }
+        if (e) { note.textContent = "Your first attempt today is already on the board; retries don't change it."; return; }
+      } catch { /* try again */ }
+    }
+    note.textContent = "Not on the board yet. It may still be checking; look on the Stats page in a minute.";
+  }
+  const ordinal = (n) => n + (n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] || "th");
+
   /* ---------- accounts ---------- */
   async function runSync() {
     if (!user || !cloud) return;
@@ -174,6 +209,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
         const first = !(await store.get("account"));
         user = u;
         await runSync();
+        try { boardName = await ensureProfile({ cloud: c, user: u }); } catch (e) { console.warn("Couldn't set up the board name", e); }
         if (first && sync === "synced") toast(`Signed in as ${u.name || u.email}. Your galleys are now saved to your account.`);
       } else if (!u && user) {
         user = null; sync = "idle"; updateStanding();
@@ -610,10 +646,13 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       if (accountsEnabled) {
         const uid = user?.uid;
         if (uid) { sync = "syncing"; renderNavs(); }
+        const finished = test;
         pushGalley({ store, cloud, uid, state, result, words: r.words }).then((next) => {
           if (next) { state = { ...next, recent: state.recent }; sync = "synced"; }
           else if (uid) { sync = "error"; syncError = "offline? it will retry"; }
           updateStanding();
+          // the finish band is drawn by now; only add to it if it's still this galley's
+          if (next && result.kind === "daily" && test === finished) showBoardPlace(result, doneBand.querySelector(".doneIn > div"));
         });
       }
     }
@@ -636,7 +675,13 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     let badges = "";
     if (change?.isBest) badges += `<span class="pb">New best${change.previous ? ` · was ${change.previous.score.toFixed(1)}` : ""}</span>`;
     if (change?.rankUp) badges += `<span class="rankup">Now ${esc(change.rankAfter.rank.name)}</span>`;
+    const levelUp = change && change.levelAfter.level > change.levelBefore.level;
+    if (change?.xp) badges += `<span class="xp" title="${esc((change.xpParts || []).map(([l, x]) => `${l} ${x}`).join(" · "))}">+${change.xp} XP</span>`;
+    if (levelUp) badges += `<span class="pb">Level ${change.levelAfter.level}</span>`;
     let note = "";
+    if (change?.xpParts?.length > 1) note += `<div class="note">${esc(change.xpParts.map(([l, x]) => `${l} +${x}`).join(" · "))}</div>`;
+    if (change?.isBest) toast(`New personal best · ${bestLabel(change.key)}: ${change.previous ? `${change.previous.score.toFixed(1)} → ` : ""}${score(r.wpm, r.acc).toFixed(1)}`, "pb");
+    if (levelUp) toast(`Level ${change.levelAfter.level}! ${change.levelAfter.need - change.levelAfter.into} XP to the next.`, "lv");
     const from = test.source.from;
     if (from && test.committed) {
       const c = compare({ wpm: r.wpm, acc: test.died ? r.acc : r.acc }, from, score), who = from.name || "them";
@@ -654,7 +699,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       note += `<div class="note">${firstToday ? `A retry: today's daily stays at your first attempt, ${official.score.toFixed(1)}.` : "Your first attempt today, so this is the one that counts."}${firsts.size ? ` Your best daily is ${best.toFixed(1)} over ${firsts.size} ${firsts.size === 1 ? "day" : "days"}.` : ""}</div>`;
       if (!firstToday && firsts.size && official.score > best) badges += `<span class="pb">Best daily yet</span>`;
     }
-    if (change && test.source.kind === "normal" && !change.rankAfter.rank && change.rankAfter.needed) note = `<div class="note">${change.rankAfter.needed} more ranked ${change.rankAfter.needed === 1 ? "galley" : "galleys"} until your first rank.</div>`;
+    if (change && test.source.kind === "normal" && !change.rankAfter.rank && change.rankAfter.needed) note += `<div class="note">${change.rankAfter.needed} more ranked ${change.rankAfter.needed === 1 ? "galley" : "galleys"} until your first rank.</div>`;
     if (!test.committed) note = `<div class="note">Nothing finished, so this one wasn't saved.</div>`;
     doneBand.innerHTML = `<div class="wrap doneIn">
       <div><div class="eyebrow">Galley ${no} · finished</div>
@@ -663,6 +708,9 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       <div class="stamp${stamp.cls}" role="img" aria-label="${esc(stamp.aria)}"><b>${stamp.big}</b><span>${stamp.small}</span></div>
     </div>`;
     doneBand.hidden = false;
+    if (test.source.kind === "daily" && test.committed && accountsEnabled && !user) {
+      doneBand.querySelector(".doneIn > div").insertAdjacentHTML("beforeend", `<div class="note">Sign in to put your daily on the board.</div>`);
+    }
     window.scrollTo(0, 0);
   }
   function finishReceipt(r) {
@@ -855,7 +903,14 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
           else await store.clear();
           state = { ...emptyState(), profile: state.profile }; await store.set("profile", state.profile); updateStanding(); route();
         },
-        account: { enabled: accountsEnabled, user, sync, syncError },
+        account: { enabled: accountsEnabled, user, sync, syncError, name: boardName },
+        loadBoard: cloud?.dailyBoard ? async () => ({ rows: await cloud.dailyBoard(dayKey(Date.now()), 25), me: user?.uid, signedIn: !!user }) : null,
+        onRename: async (raw) => {
+          const name = cleanName(raw);
+          if (!name) return "Use 2 to 20 characters.";
+          try { await cloud.setProfile(user.uid, name); boardName = name; return "Saved."; }
+          catch (e) { return `Couldn't save (${e?.code || "error"}).`; }
+        },
         onSignIn: signIn, onSignOut: signOut
       });
       window.scrollTo(0, 0);

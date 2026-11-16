@@ -50,6 +50,28 @@ export async function createCloud(config, { emulators = false } = {}) {
       const snap = await F.getDocs(F.query(results(uid), F.orderBy("at", "desc"), F.limit(n)));
       return snap.docs.map((d) => d.data());
     },
+    async getProfile(uid) {
+      const s = await F.getDoc(F.doc(db, "profiles", uid));
+      return s.exists() ? s.data() : null;
+    },
+    setProfile: (uid, name) => F.setDoc(F.doc(db, "profiles", uid), { name }),
+    async dailyBoard(day, n = 50) {
+      const snap = await F.getDocs(F.query(F.collection(db, "boards", `daily-${day}`, "entries"), F.orderBy("score", "desc"), F.limit(n)));
+      return snap.docs.map((d) => d.data());
+    },
+    async dailyEntry(day, uid) {
+      const s = await F.getDoc(F.doc(db, "boards", `daily-${day}`, "entries", uid));
+      return s.exists() ? s.data() : null;
+    },
+    /** Place on the board for a score, and how many are on it. */
+    async dailyPlace(day, score) {
+      const entries = F.collection(db, "boards", `daily-${day}`, "entries");
+      const [above, all] = await Promise.all([
+        F.getCountFromServer(F.query(entries, F.where("score", ">", score))),
+        F.getCountFromServer(entries)
+      ]);
+      return { place: above.data().count + 1, of: all.data().count };
+    },
     async deleteAll(uid) {
       for (;;) {
         const snap = await F.getDocs(F.query(results(uid), F.limit(400)));
@@ -59,6 +81,7 @@ export async function createCloud(config, { emulators = false } = {}) {
         await batch.commit();
       }
       await F.deleteDoc(account(uid));
+      await F.deleteDoc(F.doc(db, "profiles", uid));
     }
   };
 }

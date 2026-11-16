@@ -22,6 +22,7 @@ export function buildResult({ id, userId, at, session, stats, meta }) {
     wpm: stats.wpm, raw: stats.raw, acc: stats.acc, score: score(stats.wpm, stats.acc),
     errors: stats.errors, fixes: stats.corrections, keyCount: stats.keys, secs: stats.secs,
     bestStreak: stats.best, wordsDone: meta.wordsDone, clean: stats.errors === 0 && stats.corrections === 0,
+    xp: null,                        // filled in by applyResult
     targets: session.targets.slice(0, Math.max(meta.wordsDone, 1) + 1),
     keys: packKeys(session.keys)
   };

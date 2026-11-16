@@ -14,6 +14,17 @@ export function createFakeCloud() {
     async foldAccount(uid, fn) { const d = load(); const next = fn(d.accounts[uid] ?? null); d.accounts[uid] = next; save(d); return next; },
     async putResult(uid, r) { const d = load(); d.results[uid] ??= {}; d.results[uid][r.id] ??= r; save(d); },
     async recentResults(uid, n) { return Object.values(load().results[uid] || {}).sort((a, b) => b.at - a.at).slice(0, n); },
+    async getProfile(uid) { return (load().profiles || {})[uid] ?? null; },
+    async setProfile(uid, name) { const d = load(); d.profiles ??= {}; d.profiles[uid] = { name }; save(d); },
+    // the board as the Cloud Function would fill it, seeded with two rivals
+    async dailyBoard(day) {
+      const d = load(), mine = Object.values(d.results["test-uid"] || {}).filter((r) => r.kind === "daily" && r.day === day).sort((a, b) => a.at - b.at)[0];
+      const rows = [{ uid: "r1", name: "Ana", wpm: 88, acc: 99.1, score: 86.4, clean: false }, { uid: "r2", name: "Ben", wpm: 64, acc: 100, score: 64, clean: true }];
+      if (mine) rows.push({ uid: "test-uid", resultId: mine.id, name: (d.profiles || {})["test-uid"]?.name || "Typist", wpm: mine.wpm, acc: mine.acc, score: mine.score, clean: mine.clean });
+      return rows.sort((a, b) => b.score - a.score);
+    },
+    async dailyEntry(day, uid) { return (await this.dailyBoard(day)).find((r) => r.uid === uid) || null; },
+    async dailyPlace(day, score) { const b = await this.dailyBoard(day); return { place: b.filter((r) => r.score > score).length + 1, of: b.length }; },
     async deleteAll(uid) { const d = load(); delete d.accounts[uid]; delete d.results[uid]; save(d); }
   };
 }

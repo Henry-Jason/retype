@@ -41,6 +41,8 @@ describe("account documents", () => {
     await assertFails(setDoc(doc(as("ana"), "users/ana"), { ...account(), name: "x".repeat(41) }));
     await assertFails(setDoc(doc(as("ana"), "users/ana"), { ...account(), folded: Array(301).fill("r") }));
     await assertSucceeds(setDoc(doc(as("ana"), "users/ana"), { ...account(), folded: ["r1"] }));
+    await assertSucceeds(setDoc(doc(as("ana"), "users/ana"), { ...account(), xp: 1234 }));
+    await assertFails(setDoc(doc(as("ana"), "users/ana"), { ...account(), xp: -5 }));
     await assertSucceeds(setDoc(doc(as("ana"), "users/ana"), { ...account(), name: "Ana" }));
   });
 });
@@ -69,6 +71,29 @@ describe("galley results", () => {
     await assertFails(setDoc(doc(as("ana"), "users/ana/results/r1"), result("r1", "ana", { wpm: -5 })));
     await assertFails(setDoc(doc(as("ana"), "users/ana/results/r1"), result("r1", "ana", { kind: "admin" })));
     await assertFails(setDoc(doc(as("ana"), "users/ana/results/r1"), result("r1", "ana", { keys: [1, 2] })));
+  });
+});
+
+describe("profiles", () => {
+  it("are public to read and yours alone to write", async () => {
+    await assertSucceeds(setDoc(doc(as("ana"), "profiles/ana"), { name: "Ana" }));
+    await assertSucceeds(getDoc(doc(anon(), "profiles/ana")));
+    await assertFails(setDoc(doc(as("ben"), "profiles/ana"), { name: "Ben" }));
+  });
+  it("hold only a sensible name", async () => {
+    await assertFails(setDoc(doc(as("ana"), "profiles/ana"), { name: "A" }));
+    await assertFails(setDoc(doc(as("ana"), "profiles/ana"), { name: "x".repeat(21) }));
+    await assertFails(setDoc(doc(as("ana"), "profiles/ana"), { name: "Ana", admin: true }));
+  });
+});
+
+describe("leaderboards", () => {
+  it("anyone can read, no browser can write", async () => {
+    await env.withSecurityRulesDisabled((c) => setDoc(doc(c.firestore(), "boards/daily-2026-11-16/entries/ana"), { score: 80 }));
+    await assertSucceeds(getDoc(doc(anon(), "boards/daily-2026-11-16/entries/ana")));
+    await assertFails(setDoc(doc(as("ana"), "boards/daily-2026-11-16/entries/ana"), { score: 300 }));
+    await assertFails(updateDoc(doc(as("ana"), "boards/daily-2026-11-16/entries/ana"), { score: 300 }));
+    await assertFails(deleteDoc(doc(as("ana"), "boards/daily-2026-11-16/entries/ana")));
   });
 });
 

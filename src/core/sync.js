@@ -5,6 +5,7 @@
 // per finished galley. Each galley is folded into the account document inside a transaction,
 // so two devices finishing galleys at the same moment can't overwrite each other's totals.
 import { applyResult } from "../storage/progress-service.js";
+import { legacyXp } from "./levels.js";
 
 export const DOC_VERSION = 1;
 export const WEAK_CAP = 1500;
@@ -12,7 +13,7 @@ export const RECENT = 60;
 export const FOLDED_CAP = 300;
 
 export const emptyDoc = () => ({
-  v: DOC_VERSION, bests: {}, weak: {}, days: [], bestStreak: 0,
+  v: DOC_VERSION, bests: {}, weak: {}, days: [], bestStreak: 0, xp: 0,
   totals: { galleys: 0, secs: 0, keys: 0, perfect: 0 },
   folded: []
 });
@@ -25,6 +26,7 @@ export function docFrom(x) {
     v: DOC_VERSION,
     bests: x.bests || e.bests, weak: x.weak || e.weak, days: x.days || e.days,
     bestStreak: x.bestStreak || 0, totals: { ...e.totals, ...(x.totals || {}) },
+    xp: x.xp ?? legacyXp(x.totals),
     folded: Array.isArray(x.folded) ? x.folded : []
   };
 }
@@ -93,3 +95,13 @@ export function fromCloud(doc) {
   try { keys = typeof doc.keys === "string" ? JSON.parse(doc.keys) : doc.keys || []; } catch { keys = []; }
   return { ...doc, keys };
 }
+
+/* ---------- display names ---------- */
+
+/** A name for the boards: trimmed, single-spaced, 2 to 20 characters, no angle brackets. */
+export function cleanName(s) {
+  const n = String(s || "").replace(/[<>]/g, "").replace(/\s+/g, " ").trim().slice(0, 20).trim();
+  return n.length >= 2 ? n : "";
+}
+/** The default name for a new account: the first name from Google, or a placeholder. */
+export const defaultName = (user) => cleanName((user?.name || "").split(" ")[0]) || cleanName((user?.email || "").split("@")[0]) || "Typist";

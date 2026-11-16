@@ -122,6 +122,18 @@ describe("finishing galleys while signed in", () => {
     expect(cloud.accounts.get("ana").totals.galleys).toBe(2);
   });
 
+  it("adds the same XP to the account as to this browser", async () => {
+    const cloud = fakeCloud(), d = await device();
+    d.state = await syncAccount({ store: d.store, cloud, uid: "ana", state: d.state, today: TODAY });
+    for (let i = 0; i < 3; i++) {
+      const r = await play(d, { clean: true });
+      expect(r.xp).toBeGreaterThan(0);
+      d.state = (await pushGalley({ store: d.store, cloud, uid: "ana", state: d.state, result: r, words, today: TODAY })) || d.state;
+    }
+    expect(cloud.accounts.get("ana").xp).toBe(d.state.xp);
+    expect(d.state.xp).toBeGreaterThan(0);
+  });
+
   it("does nothing for a guest", async () => {
     const cloud = fakeCloud(), d = await device();
     const r = await play(d);

@@ -13,10 +13,10 @@
 // Local bookkeeping in the store's meta records:
 //   "account"  the uid this browser's data belongs to (absent for a guest)
 //   "pending"  ids of galleys finished here that the account hasn't counted yet
-import { mergeGuest, foldResult, mergeRecent, toCloud, fromCloud, docFrom, RECENT } from "../core/sync.js";
+import { mergeGuest, foldResult, mergeRecent, toCloud, fromCloud, docFrom, RECENT, defaultName } from "../core/sync.js";
 import { dayKey } from "../core/progress.js";
 
-const DOC_KEYS = ["bests", "weak", "days", "bestStreak", "totals"];
+const DOC_KEYS = ["bests", "weak", "days", "bestStreak", "totals", "xp"];
 
 async function saveDoc(store, doc) {
   await Promise.all(DOC_KEYS.map((k) => store.set(k, doc[k])));
@@ -70,6 +70,15 @@ export async function pushGalley({ store, cloud, uid, state, result, words, toda
     console.warn("Couldn't sync this galley yet; it will be retried", e);
     return null;
   }
+}
+
+/** Make sure the account has a display name for the boards; returns it. */
+export async function ensureProfile({ cloud, user }) {
+  const p = await cloud.getProfile(user.uid);
+  if (p?.name) return p.name;
+  const name = defaultName(user);
+  await cloud.setProfile(user.uid, name);
+  return name;
 }
 
 /** Signing out: this browser forgets the account's data. The account keeps everything. */

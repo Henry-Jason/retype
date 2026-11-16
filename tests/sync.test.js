@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { emptyDoc, docFrom, foldResult, mergeWeak, mergeRecent, mergeGuest, capWeak, toCloud, fromCloud } from "../src/core/sync.js";
+import { emptyDoc, docFrom, foldResult, mergeWeak, mergeRecent, mergeGuest, capWeak, toCloud, fromCloud, cleanName, defaultName } from "../src/core/sync.js";
 
 const res = (id, at, extra = {}) => ({
   id, at, day: "2026-11-16", kind: "normal", mode: "words", length: 25, list: "200", wordsDone: 25,
@@ -80,5 +80,19 @@ describe("cloud copy of a galley", () => {
     expect(typeof c.keys).toBe("string");
     expect(fromCloud(c).keys).toEqual(r.keys);
     expect(fromCloud({ ...c, keys: "not json" }).keys).toEqual([]);
+  });
+});
+
+describe("display names", () => {
+  it("tidies names for the boards", () => {
+    expect(cleanName("  Henry   O'Hare ")).toBe("Henry O'Hare");
+    expect(cleanName("<b>Seán</b>")).toBe("bSeán/b");
+    expect(cleanName("x")).toBe("");
+    expect(cleanName("a".repeat(30))).toHaveLength(20);
+  });
+  it("defaults to the Google first name", () => {
+    expect(defaultName({ name: "Henry O'Hare", email: "h@x.ie" })).toBe("Henry");
+    expect(defaultName({ name: "", email: "typist99@x.ie" })).toBe("typist99");
+    expect(defaultName({})).toBe("Typist");
   });
 });
