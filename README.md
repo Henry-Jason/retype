@@ -26,6 +26,8 @@ Everything runs in the browser. Nothing is sent anywhere yet.
 - **Till roll**: each word prints as you finish it; the receipt at the end has the totals and your next ticket.
 - **Results**: a finish band with a stamp (Perfect, Proofed, or Spiked in sudden death), a per-keystroke speed chart (actual, raw, burst, mistakes), weak words, slow letter pairs, and a share card image.
 - **Practice**: practise this galley's weak words, mix your trouble words into normal galleys, or drill slow letter pairs.
+- **Daily galley**: 40 words from the top 1,000, seeded from the date so everyone gets the same words. Your first attempt each day counts; retries are practice.
+- **Challenges**: from the results, copy a link to the exact same galley (or script) with your score attached. Whoever opens it types the same words and sees who won. Links carry everything, so no server is needed.
 - **Progress**: personal bests per kind of galley, a rank from your recent scores, a forgiving daily streak, and a weak-word profile that builds up across galleys. All on the Stats page.
 - **Settings**: layout, size, typeface, slide speed, theme, stop on error, sudden death, backspace limits, word list (top 200/1,000/5,000), punctuation, numbers, focus mode, key sounds, code indentation.
 
@@ -36,6 +38,7 @@ Everything runs in the browser. Nothing is sent anywhere yet.
 - **Accuracy** is correct keys over all keys. A mistake you fix still counts. A space after a misspelt word isn't a second mistake; a space that skips letters is.
 - **Score** is `wpm × (accuracy/100)²`, so accuracy matters more than speed: 80 wpm at 100% (80) beats 100 wpm at 89% (79.2).
 - **Rank** is the average score of your last 10 ranked galleys (ordinary galleys of 15+ words; not practice, code, flow or sudden death). You need 3 for a first rank: Copy boy, Typesetter (20), Compositor (35), Proofreader (50), Sub-editor (65), Editor (80), Editor-in-chief (100).
+- **Daily galleys and challenges** don't count towards rank or personal bests: the words are known in advance, so retries would inflate them.
 - **Personal bests** are kept per kind of galley (length, word list, punctuation, numbers, sudden death; per script in code mode) and need at least 10 words.
 - **Streak**: any finished galley counts for its day. One missed day is forgiven as long as there wasn't another forgiven day in the week before it.
 
@@ -50,6 +53,7 @@ src/
     chart-data.js   per-keystroke speed series
     code.js         scripts for code mode, Python highlighting
     progress.js     score, ranks, personal bests, streaks, weak-word profile
+    challenge.js    challenge links (encode/decode) and the daily seed
     result.js       the stored shape of a finished galley
   storage/
     store.js             IndexedDB (memory fallback): results + small records

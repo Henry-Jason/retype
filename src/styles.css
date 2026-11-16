@@ -343,3 +343,8 @@ body.flow .hint-flow{display:inline}
 .sactions{display:flex;gap:8px;flex-wrap:wrap}
 .danger{color:var(--desk-pencil)!important}
 body.flow .hint-noflow{display:none}
+
+/* challenge card */
+.chin{width:100%;font:14px var(--ui);padding:7px 9px;border:1px solid var(--desk-line);border-radius:6px;background:var(--paper);color:var(--ink)}
+.chin[readonly]{font:12px "Courier Prime",monospace;color:var(--ink-muted)}
+.done .rankup:first-child{margin-left:0}

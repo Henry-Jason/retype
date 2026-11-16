@@ -6,7 +6,8 @@ import { analyse, describe } from "../core/analysis.js";
 import { chartData } from "../core/chart-data.js";
 import { SNIPPETS, scriptLines } from "../core/code.js";
 import { buildResult } from "../core/result.js";
-import { rankFrom, streak, dayKey, topWeak } from "../core/progress.js";
+import { rankFrom, streak, dayKey, topWeak, score } from "../core/progress.js";
+import { encodeChallenge, decodeChallenge, dailySeed, compare, DAILY } from "../core/challenge.js";
 import { record, emptyState } from "../storage/progress-service.js";
 import { DEFAULTS, PRESETS, LIMITS, SLIDE, FS, FONTS, SETTINGS, saveSettings } from "./settings.js";
 import { playKey, playErr } from "./sound.js";
@@ -24,6 +25,9 @@ export function startApp({ cfg, store, progress }) {
   let state = progress;
   let test, wordEls, cache, center, rows, ticker, idleTimer, editing = null, drawerOpen = false, lastChart = null;
   const galleyNo = () => pad(state.totals.galleys + 1, 4);
+  let notice = "";
+  const dayLabel = (day) => { const [y, m, d] = day.split("-").map(Number); return new Date(y, m - 1, d).toLocaleDateString(undefined, { day: "numeric", month: "short" }); };
+  const o2label = (o) => [o.mode === "time" ? `${o.length} seconds` : `${o.length} words`, (LISTS[o.list]?.label || o.list).toLowerCase(), o.punct ? "punctuation" : "", o.nums ? "numbers" : "", o.sudden ? "sudden death" : ""].filter(Boolean).join(" · ");
 
   /* ---------- display ---------- */
   function applyDisplay() {
@@ -85,6 +89,7 @@ export function startApp({ cfg, store, progress }) {
     const more = document.createElement("div"); more.className = "grp";
     more.appendChild(btn("flow", plain && cfg.mode === "flow", () => { cfg.mode = "flow"; saveSettings(cfg); newTest({ kind: "normal" }); }));
     more.appendChild(btn("python", !!(test && test.code), () => newTest({ kind: "code", idx: test && test.code ? test.source.idx : 0 })));
+    more.appendChild(btn("daily", !!(test && test.source.kind === "daily"), () => newTest(dailySource())));
     box.appendChild(more);
     const nav = (cls, html, onclick, id) => { const b = document.createElement("button"); b.type = "button"; b.className = cls; b.id = id; b.innerHTML = html; b.onclick = onclick; box.appendChild(b); };
     nav("navbtn", `${ICON_CHART}Stats`, () => { location.hash = "stats"; }, "openStats");
@@ -133,10 +138,11 @@ export function startApp({ cfg, store, progress }) {
     document.body.classList.remove("ended", "typing-now");
     doneBand.hidden = true;
     const code = source.kind === "code", practice = source.kind === "practice";
-    const flow = !code && !practice && cfg.mode === "flow";
-    const infinite = !code && !practice && (cfg.mode === "time" || flow);
+    const o = source.opts || { mode: cfg.mode, length: cfg.mode === "time" ? cfg.time : cfg.words, list: cfg.list, punct: cfg.punct, nums: cfg.nums, sudden: cfg.sudden };
+    const flow = !code && !practice && o.mode === "flow";
+    const infinite = !code && !practice && (o.mode === "time" || flow);
     const seed = source.seed ?? randomSeed(), rand = mulberry32(seed);
-    const genOpts = { rand, list: cfg.list, weak: source.weak || null, ratio: source.ratio || 0, punct: cfg.punct, nums: cfg.nums };
+    const genOpts = { rand, list: o.list, weak: source.weak || null, ratio: source.ratio || 0, punct: o.punct, nums: o.nums };
     let targets, lineNo = null, snippet = null, lines = null;
     if (code) {
       snippet = SNIPPETS[source.idx];
@@ -144,11 +150,11 @@ export function startApp({ cfg, store, progress }) {
       const typable = lines.filter((l) => !l.blank);
       targets = typable.map((l) => l.target); lineNo = typable.map((l) => l.n);
     } else if (practice) targets = source.words.slice();
-    else targets = genWords(infinite ? 80 : cfg.words, genOpts);
+    else targets = genWords(infinite ? 80 : o.length, genOpts);
     test = {
       source: { ...source, seed }, seed, rand, genOpts, targets, typed: targets.map(() => ""), werr: targets.map(() => 0),
-      cur: 0, first: 0, committed: 0, infinite, flow, limit: cfg.mode === "time" && infinite && !flow ? cfg.time : null,
-      sudden: cfg.sudden && !code && !practice && !flow, died: false,
+      cur: 0, first: 0, committed: 0, infinite, flow, limit: o.mode === "time" && infinite ? o.length : null, opts: o,
+      sudden: !!o.sudden && !code && !practice && !flow, died: false,
       startT: null, pausedTotal: 0, pauseStart: null, lastT: null, gap: false, keys: [], ended: false,
       total: 0, okKeys: 0, streak: 0, best: 0, corrections: [],
       code, snippet, lines, lineNo, tok: null, layout: code ? "page" : cfg.layout
@@ -177,6 +183,7 @@ export function startApp({ cfg, store, progress }) {
   function fresh() {
     const s = test.source;
     if (s.kind === "code") newTest({ kind: "code", idx: (s.idx + 1) % SNIPPETS.length });
+    else if (s.kind === "challenge" || s.kind === "daily") newTest({ kind: "normal" });
     else if (s.kind === "practice") newTest({ ...s, seed: undefined, words: shuffleSpread(s.words, mulberry32(randomSeed())) });
     else newTest({ ...s, seed: undefined });
   }
@@ -185,9 +192,21 @@ export function startApp({ cfg, store, progress }) {
     const extra = [];
     if (test.sudden) extra.push("sudden death");
     if (test.flow) extra.push("flow: no clock, no end");
+    if (s.kind === "challenge" || s.kind === "daily" || (s.kind === "code" && s.from)) {
+      tag.hidden = false;
+      const f = s.from;
+      const vs = f ? ` · ${f.name ? esc(f.name) + "'s" : "their"} score ${score(f.wpm, f.acc).toFixed(1)} (${Math.round(f.wpm)} wpm, ${f.acc.toFixed(1)}%)` : "";
+      const what = s.kind === "daily" ? `Daily galley · ${dayLabel(s.day)} · ${o2label(test.opts)} · your first attempt today counts`
+        : s.kind === "code" ? `Challenge${f && f.name ? " from " + esc(f.name) : ""} · Python · ${esc(test.snippet.title)}${vs}`
+        : `Challenge${f && f.name ? " from " + esc(f.name) : ""} · ${o2label(test.opts)}${vs}`;
+      tag.innerHTML = `<span>${what}${extra.length ? " · " + extra.join(" · ") : ""}</span><button type="button" id="exitTag">Leave</button>`;
+      $("#exitTag").onclick = () => newTest({ kind: "normal" });
+      return;
+    }
     if (s.kind === "normal") {
-      tag.hidden = !extra.length;
-      tag.innerHTML = `<span>${extra.join(" · ")}</span>`;
+      tag.hidden = !extra.length && !notice;
+      tag.innerHTML = `<span>${[notice, ...extra].filter(Boolean).join(" · ")}</span>`;
+      notice = "";
       return;
     }
     tag.hidden = false;
@@ -426,8 +445,10 @@ export function startApp({ cfg, store, progress }) {
   function galleyWhat() {
     if (test.code) return `SCRIPT · ${test.snippet.title.toUpperCase()}`;
     if (test.source.kind === "practice") return "PRACTICE";
+    if (test.source.kind === "daily") return `DAILY · ${dayLabel(test.source.day).toUpperCase()}`;
+    if (test.source.kind === "challenge") return `CHALLENGE · ${test.opts.mode === "time" ? test.opts.length + " SECONDS" : test.targets.length + " WORDS"}`;
     if (test.flow) return "FLOW";
-    return test.infinite ? `${cfg.time} SECONDS` : `${test.targets.length} WORDS`;
+    return test.infinite ? `${test.opts.length} SECONDS` : `${test.targets.length} WORDS`;
   }
   function startReceipt() {
     receipt.className = "receipt";
@@ -487,25 +508,26 @@ export function startApp({ cfg, store, progress }) {
     const result = buildResult({
       id: uuid(), userId: state.profile.id, at: Date.now(), session: test, stats: r,
       meta: {
-        kind: s.kind, mode: test.code ? "code" : s.kind === "practice" ? "practice" : test.flow ? "flow" : cfg.mode,
-        length: test.code || s.kind === "practice" ? test.targets.length : cfg.mode === "time" ? cfg.time : cfg.mode === "words" ? test.targets.length : null,
-        list: test.code ? null : cfg.list, punct: !test.code && cfg.punct, nums: !test.code && cfg.nums, sudden: test.sudden,
+        kind: s.kind, mode: test.code ? "code" : s.kind === "practice" ? "practice" : test.flow ? "flow" : test.opts.mode,
+        length: test.code || s.kind === "practice" ? test.targets.length : test.opts.mode === "time" ? test.opts.length : test.opts.mode === "words" ? test.targets.length : null,
+        list: test.code ? null : test.opts.list, punct: !test.code && !!test.opts.punct, nums: !test.code && !!test.opts.nums, sudden: test.sudden,
         snippet: test.code ? test.snippet.id : null, seed: test.seed, wordsDone: test.committed
       }
     });
     const thisGalley = galleyNo();
+    const earlierDailies = state.recent.filter((x) => x.kind === "daily");
     let change = null;
     if (test.committed > 0) {
       const out = await record(store, state, result, r.words);
       state = out.state; change = out.change;
     }
-    showDone(r, change, thisGalley);
+    showDone(r, change, thisGalley, earlierDailies);
     finishReceipt(r);
     test.code ? codeResults(r, thisGalley) : wordResults(r, thisGalley);
     updateStanding(); renderConfig();
   }
 
-  function showDone(r, change, no) {
+  function showDone(r, change, no, earlierDailies) {
     const n = test.committed, clean = r.errors === 0 && r.corrections === 0 && !test.died;
     const unit = test.code ? (n === 1 ? "line" : "lines") : n === 1 ? "word" : "words";
     const what = test.code ? `${test.snippet.title} · ${n} ${unit}` : `${n} ${unit}`;
@@ -519,7 +541,24 @@ export function startApp({ cfg, store, progress }) {
     if (change?.isBest) badges += `<span class="pb">New best${change.previous ? ` · was ${change.previous.score.toFixed(1)}` : ""}</span>`;
     if (change?.rankUp) badges += `<span class="rankup">Now ${esc(change.rankAfter.rank.name)}</span>`;
     let note = "";
-    if (change && !change.rankAfter.rank && change.rankAfter.needed) note = `<div class="note">${change.rankAfter.needed} more ranked ${change.rankAfter.needed === 1 ? "galley" : "galleys"} until your first rank.</div>`;
+    const from = test.source.from;
+    if (from && test.committed) {
+      const c = compare({ wpm: r.wpm, acc: test.died ? r.acc : r.acc }, from, score), who = from.name || "them";
+      const head = c.result === "win" ? `You beat ${esc(who)} by ${c.diff.toFixed(1)}` : c.result === "loss" ? `${esc(from.name || "They")} ${from.name ? "wins" : "win"} by ${(-c.diff).toFixed(1)}` : `Dead heat with ${esc(who)}`;
+      badges += `<span class="${c.result === "win" ? "pb" : "rankup"}">${head}</span>`;
+      note += `<div class="note">You ${c.mine.toFixed(1)} (${Math.round(r.wpm)} wpm, ${r.acc.toFixed(1)}%) · ${esc(from.name || "Them")} ${c.theirs.toFixed(1)} (${Math.round(from.wpm)} wpm, ${from.acc.toFixed(1)}%)</div>`;
+    }
+    if (test.source.kind === "daily" && test.committed) {
+      const today = earlierDailies.filter((x) => x.day === test.source.day);
+      const firstToday = today.length ? today[today.length - 1] : null;
+      const official = firstToday || { score: score(r.wpm, r.acc) };
+      const past = earlierDailies.filter((x) => x.day !== test.source.day);
+      const firsts = new Map(); for (const x of past) firsts.set(x.day, x); // recent is newest first, so the last one kept per day is that day's first
+      const best = Math.max(0, ...[...firsts.values()].map((x) => x.score));
+      note += `<div class="note">${firstToday ? `A retry: today's daily stays at your first attempt, ${official.score.toFixed(1)}.` : "Your first attempt today, so this is the one that counts."}${firsts.size ? ` Your best daily is ${best.toFixed(1)} over ${firsts.size} ${firsts.size === 1 ? "day" : "days"}.` : ""}</div>`;
+      if (!firstToday && firsts.size && official.score > best) badges += `<span class="pb">Best daily yet</span>`;
+    }
+    if (change && test.source.kind === "normal" && !change.rankAfter.rank && change.rankAfter.needed) note = `<div class="note">${change.rankAfter.needed} more ranked ${change.rankAfter.needed === 1 ? "galley" : "galleys"} until your first rank.</div>`;
     if (!test.committed) note = `<div class="note">Nothing finished, so this one wasn't saved.</div>`;
     doneBand.innerHTML = `<div class="wrap doneIn">
       <div><div class="eyebrow">Galley ${no} · finished</div>
@@ -553,6 +592,16 @@ export function startApp({ cfg, store, progress }) {
       <div class="stat"><label>Time</label><b>${r.secs.toFixed(1)}s</b></div>
     </div>
     <div class="panel"><h2>Speed</h2><div class="legend" id="legend"></div><div class="chart" id="chart"></div></div>`;
+  const challengeCard = () => {
+    const ok = test.code || ((test.source.kind === "normal" || test.source.kind === "challenge" || test.source.kind === "daily") && !test.flow);
+    if (!ok || !test.committed) return "";
+    let name = "";
+    try { name = localStorage.getItem("retype-name") || ""; } catch { /* fine */ }
+    return `<div class="card"><h3>Challenge a friend</h3><p>A link to these exact ${test.code ? "lines" : "words"}, with your score to beat.</p>
+      <label class="h" for="chName" style="font-size:12px;color:var(--desk-muted)">Your name on the link (optional)</label>
+      <input id="chName" class="chin" maxlength="20" value="${esc(name)}" placeholder="Anonymous">
+      <button class="go" id="btnChallenge">Copy link</button><input id="chLink" class="chin" readonly hidden aria-label="Challenge link"></div>`;
+  };
   const shareCard = `<div class="card"><h3>Share card</h3><p>This galley's receipt as an image, stamp and all.</p><button class="go share" id="btnShare">Save image</button></div>`;
   const rowsFor = (items, head, cells) => items.length ? `<div class="row head">${head}</div>` + items.map(cells).join("") : "";
 
@@ -587,7 +636,7 @@ export function startApp({ cfg, store, progress }) {
           <button class="go" id="btnDrill" ${drill ? "" : "disabled"}>Start drill</button></div>
         <div class="card"><h3>Next galley</h3><p>${test.source.kind === "mix" ? "Another mixed galley, same weak words." : `A fresh ${modeLabel} galley.`}</p>
           <button class="go" id="btnNext">Start <kbd>tab</kbd></button></div>
-        ${shareCard}
+        ${shareCard}${challengeCard()}
       </div>
       <div class="foot">${r.keys} keystrokes timed. Latencies after a pause, a correction or a gap over 2s are left out.</div>`;
     drawResultChart(r);
@@ -600,7 +649,7 @@ export function startApp({ cfg, store, progress }) {
       cfg.ratio = +b.dataset.v; saveSettings(cfg);
       $("#ratio").querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
     };
-    wireShare(r, no);
+    wireShare(r, no); wireChallenge(r);
   }
 
   function codeResults(r, no) {
@@ -632,13 +681,13 @@ export function startApp({ cfg, store, progress }) {
         <div class="card"><h3>Type it again</h3><p>Same script, now that you know where it bites.</p><button class="go primary" id="btnPractice">Start <kbd>enter</kbd></button></div>
         <div class="card"><h3>Next script</h3><p>${esc(nextTitle)}.</p><button class="go" id="btnNext">Start <kbd>tab</kbd></button></div>
         <div class="card"><h3>Back to words</h3><p>A ${modeLabel} galley.</p><button class="go" id="btnWords">Start</button></div>
-        ${shareCard}
+        ${shareCard}${challengeCard()}
       </div>`;
     drawResultChart(r);
     $("#btnPractice").onclick = () => newTest({ ...test.source });
     $("#btnNext").onclick = fresh;
     $("#btnWords").onclick = () => newTest({ kind: "normal" });
-    wireShare(r, no);
+    wireShare(r, no); wireChallenge(r);
   }
 
   function drawResultChart(r) {
@@ -661,14 +710,47 @@ export function startApp({ cfg, store, progress }) {
     };
   }
 
+  function wireChallenge(r) {
+    const btn = $("#btnChallenge"); if (!btn) return;
+    btn.onclick = async () => {
+      const name = $("#chName").value.trim().slice(0, 20);
+      try { localStorage.setItem("retype-name", name); } catch { /* fine */ }
+      const from = { name, wpm: r.wpm, acc: r.acc };
+      const c = test.code ? { mode: "code", snippet: test.snippet.id, from }
+        : { seed: test.seed, mode: test.opts.mode, length: test.opts.mode === "time" ? test.opts.length : test.targets.length, list: test.opts.list, punct: test.opts.punct, nums: test.opts.nums, sudden: test.opts.sudden, from };
+      const link = `${location.origin}${location.pathname}#c=${encodeChallenge(c)}`;
+      const out = $("#chLink"); out.value = link; out.hidden = false;
+      try { await navigator.clipboard.writeText(link); btn.textContent = "Link copied"; }
+      catch { out.focus(); out.select(); btn.textContent = "Copy the link below"; }
+      setTimeout(() => { if (btn.isConnected) btn.textContent = "Copy link"; }, 2500);
+    };
+  }
+
+  /* ---------- daily and challenges ---------- */
+  function dailySource() {
+    const day = dayKey(Date.now());
+    return { kind: "daily", day, seed: dailySeed(day), opts: { ...DAILY } };
+  }
+  function challengeSource(c) {
+    if (c.mode === "code") return { kind: "code", idx: SNIPPETS.findIndex((s) => s.id === c.snippet), from: c.from };
+    return { kind: "challenge", seed: c.seed, from: c.from, opts: { mode: c.mode, length: c.length, list: c.list, punct: c.punct, nums: c.nums, sudden: c.sudden } };
+  }
+
   /* ---------- stats page ---------- */
   function route() {
+    if (location.hash.startsWith("#c=")) {
+      const c = decodeChallenge(location.hash.slice(3));
+      history.replaceState(null, "", location.pathname + location.search);
+      if (c) { newTest(challengeSource(c)); }
+      else { notice = "That challenge link didn't work, so here's an ordinary galley."; newTest({ kind: "normal" }); }
+    }
     const stats = location.hash === "#stats";
     statsView.hidden = !stats; typingView.hidden = stats;
     if (stats) {
       input.blur();
       renderStats(statsView, state, {
         onBack: () => { location.hash = ""; },
+        onDaily: () => { location.hash = ""; newTest(dailySource()); },
         onPractice: (words) => { location.hash = ""; newTest({ kind: "practice", words: shuffleSpread(words.flatMap((w) => [w, w, w]), mulberry32(randomSeed())), label: `Practice · ${words.length} trouble words ×3` }); },
         onMix: (words) => { location.hash = ""; newTest({ kind: "mix", weak: words, ratio: cfg.ratio }); },
         onReset: async () => { await store.clear(); state = { ...emptyState(), profile: state.profile }; await store.set("profile", state.profile); updateStanding(); route(); }

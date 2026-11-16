@@ -7,6 +7,8 @@ import { esc, fmtDuration } from "./util.js";
 export function resultLabel(r) {
   if (r.kind === "code") return `code · ${SNIPPETS.find((s) => s.id === r.snippet)?.title || r.snippet}`;
   if (r.kind === "practice") return "practice";
+  if (r.kind === "daily") return `daily · ${new Date(r.at).toLocaleDateString(undefined, { day: "numeric", month: "short" })}`;
+  if (r.kind === "challenge") return `challenge · ${r.mode === "time" ? `${r.length}s` : `${r.length} words`}`;
   const base = r.mode === "flow" ? "flow" : r.mode === "time" ? `${r.length}s` : `${r.length} words`;
   const extra = [r.kind === "mix" ? "mixed" : "", r.list && r.list !== "200" ? (LISTS[r.list]?.label || r.list).toLowerCase() : "", r.punct ? "punctuation" : "", r.nums ? "numbers" : "", r.sudden ? "sudden death" : ""].filter(Boolean);
   return [base, ...extra].join(" · ");
@@ -25,6 +27,10 @@ export function renderStats(view, state, handlers) {
   const weak = topWeak(state.weak, 24);
   const ranked = state.recent.filter(isRanked).slice(0, 30).reverse();
   const bests = Object.entries(state.bests).sort((a, b) => b[1].score - a[1].score);
+  // the first attempt each day is the one that counts
+  const dailyFirst = new Map();
+  for (const r of state.recent) if (r.kind === "daily") dailyFirst.set(r.day, r);
+  const dailies = [...dailyFirst.values()].sort((a, b) => b.at - a.at).slice(0, 7);
 
   const rankCard = rk.rank
     ? `<div class="big">${esc(rk.rank.name)}</div>
@@ -59,6 +65,10 @@ export function renderStats(view, state, handlers) {
         <div class="sub">${fmtDuration(state.totals.secs)} typing · ${state.totals.keys.toLocaleString()} keys · ${state.totals.perfect} perfect ${state.totals.perfect === 1 ? "galley" : "galleys"} (10+ words, no mistakes)</div></div>
       <div class="scard wide"><h2>Recent galleys</h2>${spark}
         ${recentRows ? `<div class="tblwrap"><table class="tbl"><thead><tr><th>When</th><th>Galley</th><th class="num">WPM</th><th class="num">Accuracy</th><th class="num">Score</th><th></th></tr></thead><tbody>${recentRows}</tbody></table></div>` : `<div class="sub">Nothing yet. Your first galley is waiting.</div>`}</div>
+      <div class="scard wide"><h2>Daily galleys</h2>
+        <div class="sub">One 40-word galley a day from the top 1,000, the same words for everyone. Your first attempt each day counts.</div>
+        ${dailies.length ? `<div class="tblwrap"><table class="tbl"><thead><tr><th>Day</th><th class="num">WPM</th><th class="num">Accuracy</th><th class="num">Score</th><th></th></tr></thead><tbody>${dailies.map((r) => `<tr><td>${shortDate(r.at)}</td><td class="num">${Math.round(r.wpm)}</td><td class="num">${r.acc.toFixed(1)}%</td><td class="num">${r.score.toFixed(1)}</td><td>${r.clean ? "perfect" : ""}</td></tr>`).join("")}</tbody></table></div>` : ""}
+        <div class="sactions"><button type="button" class="go" id="statsDaily">Type today's daily</button></div></div>
       <div class="scard wide"><h2>Personal bests</h2>
         ${bestRows ? `<div class="tblwrap"><table class="tbl"><thead><tr><th>Galley</th><th class="num">Score</th><th class="num">WPM</th><th class="num">Accuracy</th><th>Set</th></tr></thead><tbody>${bestRows}</tbody></table></div>` : `<div class="sub">Each kind of galley keeps its own best.</div>`}</div>
       <div class="scard wide"><h2>Words that need work</h2>
@@ -69,6 +79,7 @@ export function renderStats(view, state, handlers) {
         <div class="sactions"><button type="button" class="go danger" id="statsReset">Clear my progress</button></div></div>
     </div>`;
   view.querySelector("#statsBack").onclick = handlers.onBack;
+  view.querySelector("#statsDaily").onclick = handlers.onDaily;
   if (weak.length) {
     view.querySelector("#statsPractice").onclick = () => handlers.onPractice(weak.slice(0, 10).map((w) => w.word));
     view.querySelector("#statsMix").onclick = () => handlers.onMix(weak.slice(0, 12).map((w) => w.word));
