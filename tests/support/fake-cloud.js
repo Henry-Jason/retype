@@ -59,8 +59,9 @@ export function createFakeCloud() {
         const s = screenQuote(raw); if (!s.ok) return { ok: false, reason: s.reason };
         const id = sharedId(s.quote.text);
         if (q[id]) return { id, ok: false, reason: existingVerdict(q[id], "test-uid") };
-        q[id] = submission({ quote: s.quote, flags: s.flags, uid: "test-uid", name: (d.profiles || {})["test-uid"]?.name || "", now: Date.now() });
-        return { id, ok: true };
+        // the test user is an admin, so (like the real function) their quotes go straight live
+        q[id] = submission({ quote: s.quote, flags: s.flags, uid: "test-uid", name: (d.profiles || {})["test-uid"]?.name || "", now: Date.now(), status: "approved" });
+        return { id, ok: true, live: true };
       });
       save(d); return { results };
     },

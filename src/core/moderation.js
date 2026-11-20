@@ -84,11 +84,17 @@ export function screenQuote({ text, source, by, series }) {
 }
 
 
+/**
+ * How much someone may send in. Admins have no daily or waiting cap, and what they share goes
+ * live straight away (it still goes through the filter): they'd only be approving their own.
+ */
+export const limitsFor = (admin) => (admin ? { perDay: Infinity, pending: Infinity, status: "approved" } : { perDay: SHARE_RULES.perDay, pending: SHARE_RULES.pending, status: "pending" });
+
 /** The stored document for a new submission. */
-export function submission({ quote, flags, uid, name, now }) {
+export function submission({ quote, flags, uid, name, now, status = "pending" }) {
   return {
     id: sharedId(quote.text), text: quote.text, source: quote.source, by: quote.by, series: quote.series || "", words: wordCount(quote.text),
-    uid, name: name || "", status: "pending", flags, reports: 0, at: now, reviewedAt: null, reason: null
+    uid, name: name || "", status, flags, reports: 0, at: now, reviewedAt: status === "approved" ? now : null, reason: null
   };
 }
 
