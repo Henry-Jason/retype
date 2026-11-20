@@ -216,3 +216,27 @@ describe("challenges, bests and PP", () => {
     expect(countsForPp(r)).toBe(false);
   });
 });
+
+describe("favourites", () => {
+  const mine = [{ id: "u1", text: "one two three four", source: "Arcane" }, { id: "u2", text: "five six seven eight", source: "Dune" }];
+  it("are kept by the words, so a shared copy of your quote is still a favourite", async () => {
+    const { favKey, toggleFav, isFav } = await import("../src/core/quotes.js");
+    let keys = toggleFav([], mine[0]);
+    const shared = { id: "s9", text: "One two three, four!", source: "Arcane" };
+    expect(isFav({ mine, favs: new Set(keys) }, shared)).toBe(true);
+    expect(favKey(shared)).toBe(favKey(mine[0]));
+    keys = toggleFav(keys, shared);
+    expect(keys).toEqual([]);
+  });
+  it("filter quote mode down to favourites, and widen before giving up on them", async () => {
+    const { toggleFav } = await import("../src/core/quotes.js");
+    const favs = new Set(toggleFav([], mine[1]));
+    const p = { mine, favs };
+    expect(filterQuotes(p, { from: "mine", favs: true }).map((q) => q.id)).toEqual(["u2"]);
+    // favourites only + a source with no favourites: still a favourite, from anywhere
+    const r = pickQuote(p, { from: "mine", favs: true, source: "Arcane" }, mulberry32(1));
+    expect(r).toMatchObject({ widened: true, quote: { id: "u2" } });
+    // no favourites at all: anything
+    expect(pickQuote({ mine, favs: new Set() }, { from: "mine", favs: true }, mulberry32(1)).widened).toBe(true);
+  });
+});

@@ -27,3 +27,12 @@ export const slim = (docs) => docs.map(({ id, text, source, by, series, name, fl
 export function saveCommunity(list, at = Date.now(), ls = globalThis.localStorage) {
   try { ls.setItem(COMMUNITY, JSON.stringify({ at, list })); } catch { /* fine: it's only a cache */ }
 }
+
+// Favourites: the keys (see favKey in core/quotes.js) of quotes you've hearted, kept in this browser.
+const FAVS = "retype-favourites-v1";
+export function loadFavs(ls = globalThis.localStorage) {
+  try { const a = JSON.parse(ls.getItem(FAVS)); return Array.isArray(a) ? a.filter((x) => typeof x === "string") : []; } catch { return []; }
+}
+export function saveFavs(keys, ls = globalThis.localStorage) {
+  try { ls.setItem(FAVS, JSON.stringify(keys)); return true; } catch { return false; }
+}

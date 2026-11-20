@@ -1,6 +1,6 @@
 // The quotes page: what quote mode draws from, adding and sharing your own quotes, pasting in a
 // whole list, browsing everyone's, reporting, and (for admins) the review queue.
-import { LENGTHS, CATEGORIES, LIBRARY, filterQuotes, sources, sourceTree, sourceValues, seriesOf, guessSeries, lengthOf, wordCount, addQuotes, updateQuote, parseImport, exportQuotes, sharedId, REJECT_REASONS, REPORT_REASONS } from "../core/quotes.js";
+import { LENGTHS, CATEGORIES, LIBRARY, favKey, filterQuotes, sources, sourceTree, sourceValues, seriesOf, guessSeries, lengthOf, wordCount, addQuotes, updateQuote, parseImport, exportQuotes, sharedId, REJECT_REASONS, REPORT_REASONS } from "../core/quotes.js";
 import { esc } from "./util.js";
 
 const PAGE = 40;
@@ -21,9 +21,11 @@ const errText = (e) => e?.message?.replace(/^.*?: /, "") || "Something went wron
  *   queue() -> docs, refresh() -> Promise (reloads everyone's quotes and your submissions)
  * }
  */
+const HEART = (on) => `<svg viewBox="0 0 24 24" width="14" height="14" fill="${on ? "currentColor" : "none"}" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7.5-4.6-9.6-9.2C.9 8.4 3 4.5 6.8 4.5c2.1 0 3.6 1.1 5.2 3 1.6-1.9 3.1-3 5.2-3 3.8 0 5.9 3.9 4.4 7.3C19.5 16.4 12 21 12 21z"/></svg>`;
+
 export function renderQuotes(view, h) {
-  const pools = () => ({ mine: h.mine(), community: h.community() });
-  const ui = { tab: h.mine().length ? "mine" : h.community().length ? "community" : "library", search: "", shown: PAGE, editing: null, confirm: null, reporting: null, queue: null };
+  const pools = () => ({ mine: h.mine(), community: h.community(), favs: h.favs() });
+  const ui = { tab: h.favs().size ? "favs" : h.mine().length ? "mine" : h.community().length ? "community" : "library", search: "", shown: PAGE, editing: null, confirm: null, reporting: null, queue: null };
   let shareDefault = true;
   try { shareDefault = localStorage.getItem("retype-share") !== "0"; } catch { /* fine */ }
   view.innerHTML = `
@@ -131,17 +133,19 @@ The second quote.
     const options = tree.map((x) => x.sources
       ? `<optgroup label="${esc(x.name)}">${opt(x, `All of ${esc(x.name)}`)}${x.sources.map((s) => opt(s, esc(s.name))).join("")}</optgroup>`
       : opt(x, esc(x.name))).join("");
-    const n = filterQuotes(p, { from: cfg.quoteFrom, len: cfg.quoteLen, source: cfg.quoteSource, clean: cfg.quoteClean }).length;
+    const n = filterQuotes(p, { from: cfg.quoteFrom, len: cfg.quoteLen, source: cfg.quoteSource, clean: cfg.quoteClean, favs: cfg.quoteFavs }).length;
+    const nFav = filterQuotes(p, { favs: true }).length;
     const seg = (key, opts) => `<div class="seg" role="group">${opts.map(([v, l]) => `<button type="button" data-k="${key}" data-v='${JSON.stringify(v)}' aria-pressed="${cfg[key] === v}">${esc(l)}</button>`).join("")}</div>`;
     $("#qPool").innerHTML = `<h2>What quote mode gives you</h2>
       <div class="qfilters">
+        <div><div class="sub">Which</div>${seg("quoteFavs", [[false, "All"], [true, `Favourites (${nFav})`]])}</div>
         <div><div class="sub">From</div>${seg("quoteFrom", FROM)}</div>
         <div><div class="sub">Length</div>${seg("quoteLen", Object.entries(LENGTHS).map(([k, v]) => [k, v.label + (v.max && !v.min ? ` (up to ${v.max} words)` : v.min && !v.max ? ` (${v.min}+)` : v.min ? ` (${v.min}–${v.max})` : "")]))}</div>
         <div><div class="sub">Strong language</div>${seg("quoteClean", [[false, "Allow"], [true, "Hide"]])}</div>
         <div><label class="sub" for="qOnly">Only from</label>
           <select id="qOnly" class="chin"><option value="">Anywhere</option>${options}</select></div>
       </div>
-      <div class="sub">${n ? `${n} ${n === 1 ? "quote matches" : "quotes match"}. Each galley picks one at random; <kbd>tab</kbd> skips to another.` : "Nothing matches that yet, so quote mode will widen the search until something does."}</div>`;
+      <div class="sub">${cfg.quoteFavs && !nFav ? "No favourites yet: heart a quote below, while typing it, or on its results. " : ""}${n ? `${n} ${n === 1 ? "quote matches" : "quotes match"}. Each galley picks one at random; <kbd>tab</kbd> skips to another.` : "Nothing matches that yet, so quote mode will widen the search until something does."}</div>`;
     $("#qPool").querySelectorAll("[data-k]").forEach((b) => b.onclick = () => { h.onCfg({ [b.dataset.k]: JSON.parse(b.dataset.v) }); drawPool(); });
     $("#qOnly").onchange = (e) => { h.onCfg({ quoteSource: e.target.value || null }); drawPool(); };
     $("#qSources").innerHTML = srcs.filter((s) => s.origin !== "library").map((s) => `<option value="${esc(s.name)}">`).join("");
@@ -152,7 +156,7 @@ The second quote.
   /* ---------- the list ---------- */
   function drawTabs() {
     const p = pools(), q = ui.queue;
-    const tabs = [["mine", `Yours (${p.mine.length})`], ["community", `Everyone's (${p.community.length})`], ["library", `Library (${LIBRARY.length})`]];
+    const tabs = [["favs", `Favourites (${filterQuotes(p, { favs: true }).length})`], ["mine", `Yours (${p.mine.length})`], ["community", `Everyone's (${p.community.length})`], ["library", `Library (${LIBRARY.length})`]];
     if (h.admin()) tabs.push(["review", `Review${q ? ` (${q.length})` : ""}`]);
     $("#qTabs").innerHTML = tabs.map(([k, l]) => `<button type="button" role="tab" data-tab="${k}" aria-selected="${ui.tab === k}">${l}</button>`).join("");
     $("#qTabs").querySelectorAll("[data-tab]").forEach((b) => b.onclick = () => { ui.tab = b.dataset.tab; ui.shown = PAGE; ui.confirm = ui.reporting = null; drawList(); });
@@ -170,7 +174,8 @@ The second quote.
     const sr = seriesOf(q);
     const tag = (sr && sr !== q.source ? ` · ${esc(sr)}` : "") + (q.origin === "library" ? ` · ${esc(CATEGORIES[q.cat] || "")}` : q.origin === "community" && q.name ? ` · added by ${esc(q.name)}` : "");
     const lang = (q.flags || []).includes("language") ? ` · strong language` : "";
-    let act = `<button type="button" class="go" data-type="${esc(q.id)}">Type</button>`;
+    const fav = h.favs().has(favKey(q));
+    let act = `<button type="button" class="heart icon${fav ? " on" : ""}" data-fav="${esc(q.id)}" aria-pressed="${fav}" title="${fav ? "Remove from favourites" : "Add to favourites"}" aria-label="Favourite">${HEART(fav)}</button><button type="button" class="go" data-type="${esc(q.id)}">Type</button>`;
     if (q.origin === "mine") {
       act = statusChip(q) + act + `<button type="button" class="go" data-edit="${esc(q.id)}">Edit</button><button type="button" class="go${ui.confirm === q.id ? " danger" : ""}" data-del="${esc(q.id)}">${ui.confirm === q.id ? "Delete it?" : "Delete"}</button>`;
     } else if (q.origin === "community" && !h.shared().has(q.id)) {
@@ -185,17 +190,23 @@ The second quote.
   function drawList() {
     drawTabs();
     if (ui.tab === "review") return drawQueue();
-    const items = filterQuotes(pools(), { from: ui.tab, search: ui.search });
+    const items = ui.tab === "favs" ? filterQuotes(pools(), { favs: true, search: ui.search }) : filterQuotes(pools(), { from: ui.tab, search: ui.search });
     if (ui.tab === "mine") items.sort((a, b) => (b.at || 0) - (a.at || 0));
     const box = $("#qList");
     if (!items.length) {
-      box.innerHTML = `<div class="sub qempty">${ui.search ? "Nothing matches that search." : ui.tab === "mine" ? "No quotes of your own yet. Add one above, or paste in a list." : ui.tab === "community" ? "Nobody's quotes are live yet. Share one of yours and it'll be first." : ""}</div>`;
+      box.innerHTML = `<div class="sub qempty">${ui.search ? "Nothing matches that search." : ui.tab === "mine" ? "No quotes of your own yet. Add one above, or paste in a list." : ui.tab === "community" ? "Nobody's quotes are live yet. Share one of yours and it'll be first." : ui.tab === "favs" ? "No favourites yet. Press the heart on any quote, here, while typing it, or on its results." : ""}</div>`;
       return;
     }
     box.innerHTML = items.slice(0, ui.shown).map(row).join("") + (items.length > ui.shown ? `<div class="sactions" style="margin-top:12px"><button type="button" class="go" id="qMore">Show more (${items.length - ui.shown} left)</button></div>` : "");
     $("#qMore")?.addEventListener("click", () => { ui.shown += PAGE; drawList(); });
     const byId = (id) => items.find((q) => q.id === id);
     box.querySelectorAll("[data-type]").forEach((b) => b.onclick = () => h.onType(byId(b.dataset.type)));
+    box.querySelectorAll("[data-fav]").forEach((b) => b.onclick = () => {
+      const on = h.onFav(byId(b.dataset.fav));
+      b.classList.toggle("on", on); b.setAttribute("aria-pressed", String(on)); b.innerHTML = HEART(on);
+      b.title = on ? "Remove from favourites" : "Add to favourites";
+      drawTabs(); drawPool();
+    });
     box.querySelectorAll("[data-edit]").forEach((b) => b.onclick = () => startEdit(b.dataset.edit));
     box.querySelectorAll("[data-del]").forEach((b) => b.onclick = () => {
       const id = b.dataset.del;
