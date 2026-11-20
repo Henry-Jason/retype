@@ -7,6 +7,9 @@
 /** One number that weighs accuracy heavily: 100 wpm at 90% scores 81, 80 wpm at 100% scores 80. */
 export const score = (wpm, acc) => wpm * (acc / 100) ** 2;
 
+/** Quotes are grouped by length: up to 20 words is short, up to 45 medium, longer is long. */
+export const quoteBucket = (n) => (n <= 20 ? "short" : n <= 45 ? "medium" : "long");
+
 // Ranks now come from total PP (see pp.js); these are re-exported for the rest of the app.
 export { RANKS, rankFrom, countsForPp as isRanked } from "./pp.js";
 
@@ -15,6 +18,7 @@ export { RANKS, rankFrom, countsForPp as isRanked } from "./pp.js";
 /** Galleys are compared only with the same kind of galley. */
 export function modeKey(r) {
   if (r.kind === "code") return `code:${r.snippet}`;
+  if (r.kind === "quote") return `quote:${quoteBucket(r.length || 0)}`;
   if (r.kind !== "normal") return null;
   const len = r.mode === "time" ? `${r.length}s` : r.mode === "words" ? `${r.length}w` : r.mode;
   return [r.mode === "time" || r.mode === "words" ? len : r.mode, r.list, r.punct ? "punct" : "", r.nums ? "nums" : "", r.sudden ? "sudden" : ""].filter(Boolean).join(" ");
@@ -23,8 +27,10 @@ export function modeKey(r) {
 /** Best per mode is the highest score; ties go to the faster run. Returns the updated table and what changed. */
 export function updateBests(bests, r) {
   const key = modeKey(r);
-  // a best needs a real galley behind it: 10 words at least (a whole script in code mode)
-  if (!key || r.mode === "flow" || (r.kind !== "code" && r.wordsDone < 10)) return { bests, key, isBest: false, previous: null };
+  // a best needs a real galley behind it: 10 words at least (a whole script in code mode,
+  // a whole quote of 5 words or more in quote mode)
+  const enough = r.kind === "code" ? true : r.kind === "quote" ? r.wordsDone >= r.length && r.length >= 5 : r.wordsDone >= 10;
+  if (!key || r.mode === "flow" || !enough) return { bests, key, isBest: false, previous: null };
   const prev = bests[key] || null;
   const better = !prev || r.score > prev.score + 1e-9 || (Math.abs(r.score - prev.score) < 1e-9 && r.wpm > prev.wpm);
   if (!better) return { bests, key, isBest: false, previous: prev };

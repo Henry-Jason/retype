@@ -12,6 +12,18 @@ export async function createCloud(config, { emulators = false } = {}) {
   const account = (uid) => F.doc(db, "users", uid);
   const result = (uid, id) => F.doc(db, "users", uid, "results", id);
   const results = (uid) => F.collection(db, "users", uid, "results");
+  const quotes = F.collection(db, "quotes");
+  let fns = null;
+  async function call(name, data) {
+    if (!fns) {
+      const { getFunctions, httpsCallable, connectFunctionsEmulator } = await import("firebase/functions");
+      const f = getFunctions(app, "europe-west1");
+      if (emulators) connectFunctionsEmulator(f, "127.0.0.1", 5001);
+      fns = (n) => httpsCallable(f, n);
+    }
+    return (await fns(name)(data)).data;
+  }
+  const rows = (snap) => snap.docs.map((d) => d.data());
 
   return {
     onUser(cb) {
@@ -89,12 +101,32 @@ export async function createCloud(config, { emulators = false } = {}) {
       return { place: above.data().count + 1, of: all.data().count };
     },
     /** Ask the server to score the galleys this account had before PP existed (once). */
-    async backfillPp() {
-      const { getFunctions, httpsCallable, connectFunctionsEmulator } = await import("firebase/functions");
-      const fns = getFunctions(app, "europe-west1");
-      if (emulators) connectFunctionsEmulator(fns, "127.0.0.1", 5001);
-      return (await httpsCallable(fns, "backfillPp")()).data;
+    backfillPp: () => call("backfillPp"),
+
+    /* ---------- shared quotes ---------- */
+    /** Every approved quote; anyone can read these, signed in or not. */
+    async approvedQuotes() { return rows(await F.getDocs(F.query(quotes, F.where("status", "==", "approved"), F.limit(5000)))); },
+    /** Everything you've sent in, whatever became of it. */
+    async myShared(uid) { return rows(await F.getDocs(F.query(quotes, F.where("uid", "==", uid)))); },
+    async isAdmin(uid) {
+      try { return (await F.getDoc(F.doc(db, "admins", uid))).exists(); } catch { return false; }
     },
+    /** Admins: what's waiting, and anything live that's been reported or hidden, with the reports. */
+    async quoteQueue() {
+      const [waiting, reported] = await Promise.all([
+        F.getDocs(F.query(quotes, F.where("status", "in", ["pending", "hidden"]), F.limit(500))),
+        F.getDocs(F.query(quotes, F.where("reports", ">", 0), F.limit(200)))
+      ]);
+      const all = new Map([...rows(waiting), ...rows(reported).filter((q) => q.status === "approved")].map((q) => [q.id, q]));
+      await Promise.all([...all.values()].filter((q) => q.reports > 0).map(async (q) => {
+        q.reportList = rows(await F.getDocs(F.collection(db, "quotes", q.id, "reports")));
+      }));
+      return [...all.values()];
+    },
+    submitQuotes: (list) => call("submitQuotes", { quotes: list }),
+    withdrawQuote: (id) => call("withdrawQuote", { id }),
+    reportQuote: (id, reason) => call("reportQuote", { id, reason }),
+    reviewQuote: (id, action, extra = {}) => call("reviewQuote", { id, action, ...extra }),
     async deleteAll(uid) {
       for (;;) {
         const snap = await F.getDocs(F.query(results(uid), F.limit(400)));

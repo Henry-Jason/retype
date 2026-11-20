@@ -9,6 +9,7 @@ import { levelFrom, XP_RULES } from "../core/levels.js";
 
 export function resultLabel(r) {
   if (r.kind === "code") return `code · ${SNIPPETS.find((s) => s.id === r.snippet)?.title || r.snippet}`;
+  if (r.kind === "quote") return `quote · ${r.length} words`;
   if (r.kind === "practice") return "practice";
   if (r.kind === "daily") return `daily · ${new Date(r.at).toLocaleDateString(undefined, { day: "numeric", month: "short" })}`;
   if (r.kind === "challenge") return `challenge · ${r.mode === "time" ? `${r.length}s` : `${r.length} words`}`;
@@ -17,6 +18,7 @@ export function resultLabel(r) {
   return [base, ...extra].join(" · ");
 }
 export const bestLabel = (key) => {
+  if (key.startsWith("quote:")) return `quote · ${key.slice(6)}`;
   if (key.startsWith("code:")) return `code · ${SNIPPETS.find((s) => s.id === key.slice(5))?.title || key.slice(5)}`;
   const [len, list, ...rest] = key.split(" ");
   const l = len.endsWith("w") ? `${len.slice(0, -1)} words` : len.endsWith("s") ? `${len.slice(0, -1)} seconds` : len;
