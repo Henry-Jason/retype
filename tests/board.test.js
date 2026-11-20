@@ -1,5 +1,4 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import { execFileSync } from "node:child_process";
 import { mulberry32 } from "../src/core/rng.js";
 import { genWords } from "../src/core/words.js";
 import { dailySeed } from "../src/core/challenge.js";
@@ -9,7 +8,6 @@ import { analyse } from "../src/core/analysis.js";
 // The Cloud Function's decision, tested against the shared code it ships with.
 let boardEntry;
 beforeAll(async () => {
-  execFileSync("node", ["scripts/sync-functions.mjs"]);
   ({ boardEntry } = await import("../functions/board.js"));
 });
 
