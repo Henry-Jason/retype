@@ -59,10 +59,10 @@ const PHONE = /\d[\d\s-]{8,}\d/;
  * Check one submission. Returns { ok: true, quote, flags } with the tidied quote, or
  * { ok: false, reason } in words the submitter can act on.
  */
-export function screenQuote({ text, source, by }) {
-  const made = makeQuote({ text, source, by });
+export function screenQuote({ text, source, by, series }) {
+  const made = makeQuote({ text, source, by, series });
   if (made.error) return { ok: false, reason: made.error };
-  const q = made.quote, all = `${q.text} ${q.source} ${q.by}`;
+  const q = made.quote, all = `${q.text} ${q.source} ${q.by} ${q.series || ""}`;
   if (q.source.length < SHARE_RULES.sourceMin) return { ok: false, reason: "Say where it's from (a show, film, book, speech…), so others know what they're typing." };
   if (wordCount(q.text) < 4) return { ok: false, reason: "Shared quotes need at least four words." };
   if (hasSlur(all)) return { ok: false, reason: "That contains a slur, so it can't be shared." };
@@ -87,7 +87,7 @@ export function screenQuote({ text, source, by }) {
 /** The stored document for a new submission. */
 export function submission({ quote, flags, uid, name, now }) {
   return {
-    id: sharedId(quote.text), text: quote.text, source: quote.source, by: quote.by, words: wordCount(quote.text),
+    id: sharedId(quote.text), text: quote.text, source: quote.source, by: quote.by, series: quote.series || "", words: wordCount(quote.text),
     uid, name: name || "", status: "pending", flags, reports: 0, at: now, reviewedAt: null, reason: null
   };
 }
@@ -115,11 +115,12 @@ export function review(doc, { action, reason, edits }, now) {
   if (action === "approve" || action === "restore") {
     let next = { ...doc };
     if (action === "approve" && edits) {
-      const s = screenQuote({ text: edits.text ?? doc.text, source: edits.source ?? doc.source, by: edits.by ?? doc.by });
+      const fields = { text: edits.text ?? doc.text, source: edits.source ?? doc.source, by: edits.by ?? doc.by, series: edits.series ?? doc.series ?? "" };
+      const s = screenQuote(fields);
       if (!s.ok && !/library|four words/.test(s.reason)) return { error: s.reason };
-      const q = s.ok ? s.quote : makeQuote({ text: edits.text ?? doc.text, source: edits.source ?? doc.source, by: edits.by ?? doc.by }).quote;
+      const q = s.ok ? s.quote : makeQuote(fields).quote;
       if (sharedId(q.text) !== doc.id) return { error: "Changing the words gives it a new id; reject it and add the fixed version yourself." };
-      next = { ...next, text: q.text, source: q.source, by: q.by, words: wordCount(q.text), flags: s.ok ? s.flags : doc.flags };
+      next = { ...next, text: q.text, source: q.source, by: q.by, series: q.series || "", words: wordCount(q.text), flags: s.ok ? s.flags : doc.flags };
     }
     return { doc: { ...next, status: "approved", reviewedAt: now, reason: null, reports: action === "restore" ? 0 : doc.reports } };
   }

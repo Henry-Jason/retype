@@ -1,6 +1,6 @@
 // The quotes page: what quote mode draws from, adding and sharing your own quotes, pasting in a
 // whole list, browsing everyone's, reporting, and (for admins) the review queue.
-import { LENGTHS, CATEGORIES, LIBRARY, filterQuotes, sources, lengthOf, wordCount, addQuotes, updateQuote, parseImport, exportQuotes, sharedId, REJECT_REASONS, REPORT_REASONS } from "../core/quotes.js";
+import { LENGTHS, CATEGORIES, LIBRARY, filterQuotes, sources, sourceTree, sourceValues, seriesOf, guessSeries, lengthOf, wordCount, addQuotes, updateQuote, parseImport, exportQuotes, sharedId, REJECT_REASONS, REPORT_REASONS } from "../core/quotes.js";
 import { esc } from "./util.js";
 
 const PAGE = 40;
@@ -43,7 +43,8 @@ export function renderQuotes(view, h) {
           <div><label class="sub" for="qSource">From</label><input id="qSource" class="chin" maxlength="80" placeholder="Show, film, book, speech…" list="qSources"></div>
           <div><label class="sub" for="qBy">Who said it <span class="optl">(optional)</span></label><input id="qBy" class="chin" maxlength="80" placeholder="Character or person"></div>
         </div>
-        <datalist id="qSources"></datalist>
+        <div><label class="sub" for="qSeries">Series <span class="optl">(optional: groups it with others, like all of Harry Potter)</span></label><input id="qSeries" class="chin" maxlength="80" list="qSeriesList"></div>
+        <datalist id="qSources"></datalist><datalist id="qSeriesList"></datalist>
         <div class="qshare" data-share="qShare"></div>
         <div class="sactions"><button type="button" class="go primary" id="qAdd">Add quote</button><button type="button" class="go" id="qCancel" hidden>Cancel</button><span class="sub" id="qMsg" role="status"></span></div>
       </div>
@@ -62,10 +63,11 @@ over more than one line.
 The second quote.
 - Somewhere else</pre>
           <p>The attribution splits at the first comma, so a source with a comma in it needs a name first: <code>- Lincoln, Gettysburg Address, 1863</code>.</p>
-          <p><b>JSON</b>: a list of objects with <code>text</code>, <code>source</code> and (optionally) <code>by</code>, like an exported <code>retype-quotes.json</code>. The square brackets around the list are optional, a trailing comma is fine, and other fields are ignored.</p>
+          <p><b>JSON</b>: a list of objects with <code>text</code>, <code>source</code> and (optionally) <code>by</code> and <code>series</code>, like an exported <code>retype-quotes.json</code>. The square brackets around the list are optional, a trailing comma is fine, and other fields are ignored.</p>
           <pre>{ "text": "The first quote.", "source": "Somewhere" },
 { "text": "The second quote.", "source": "Somewhere else", "by": "Someone" }</pre>
           <p>Curly quotes, long dashes and accents become plain keyboard characters, quotation marks around a whole quote are dropped, and duplicates are skipped. Shared quotes need at least four words and a source.</p>
+          <p><b>Series</b> group sources, so "Only from" can pick all of Harry Potter or the whole MCU at once. Well-known ones (Harry Potter, Middle-earth, Marvel, Spider-Man, Batman, Breaking Bad, Game of Thrones, Dune…) are worked out from the source; give a <code>series</code> only for anything else.</p>
         </details>
         <textarea id="qBulk" class="chin qarea" rows="5" placeholder="First quote&#10;- Someone, Somewhere&#10;&#10;Second quote&#10;- Somewhere else"></textarea>
         <div><label class="sub" for="qBulkSource">From, for any without one <span class="optl">(optional)</span></label><input id="qBulkSource" class="chin" maxlength="80" list="qSources"></div>
@@ -105,7 +107,7 @@ The second quote.
     let ok = 0; const no = [];
     for (let i = 0; i < list.length; i += 25) {
       let res;
-      try { res = await h.share(list.slice(i, i + 25).map(({ text, source, by }) => ({ text, source, by }))); }
+      try { res = await h.share(list.slice(i, i + 25).map(({ text, source, by, series }) => ({ text, source, by, series: series || "" }))); }
       catch (e) { no.push(errText(e)); break; }
       for (const r of res) r.ok ? ok++ : no.push(r.reason);
     }
@@ -120,9 +122,12 @@ The second quote.
   /* ---------- what quote mode draws from ---------- */
   function drawPool() {
     const cfg = h.cfg, p = pools();
-    const srcs = sources(p);
-    if (cfg.quoteSource && !srcs.some((s) => s.name === cfg.quoteSource)) h.onCfg({ quoteSource: null });
-    const visible = srcs.filter((s) => cfg.quoteFrom === "all" || cfg.quoteFrom === s.origin);
+    const srcs = sources(p), tree = sourceTree(p, { from: cfg.quoteFrom });
+    if (cfg.quoteSource && !sourceValues(sourceTree(p)).includes(cfg.quoteSource)) h.onCfg({ quoteSource: null });
+    const opt = (x, label) => `<option value="${esc(x.value)}" ${x.value === cfg.quoteSource ? "selected" : ""}>${label} (${x.count})</option>`;
+    const options = tree.map((x) => x.sources
+      ? `<optgroup label="${esc(x.name)}">${opt(x, `All of ${esc(x.name)}`)}${x.sources.map((s) => opt(s, esc(s.name))).join("")}</optgroup>`
+      : opt(x, esc(x.name))).join("");
     const n = filterQuotes(p, { from: cfg.quoteFrom, len: cfg.quoteLen, source: cfg.quoteSource, clean: cfg.quoteClean }).length;
     const seg = (key, opts) => `<div class="seg" role="group">${opts.map(([v, l]) => `<button type="button" data-k="${key}" data-v='${JSON.stringify(v)}' aria-pressed="${cfg[key] === v}">${esc(l)}</button>`).join("")}</div>`;
     $("#qPool").innerHTML = `<h2>What quote mode gives you</h2>
@@ -131,12 +136,14 @@ The second quote.
         <div><div class="sub">Length</div>${seg("quoteLen", Object.entries(LENGTHS).map(([k, v]) => [k, v.label + (v.max && !v.min ? ` (up to ${v.max} words)` : v.min && !v.max ? ` (${v.min}+)` : v.min ? ` (${v.min}–${v.max})` : "")]))}</div>
         <div><div class="sub">Strong language</div>${seg("quoteClean", [[false, "Allow"], [true, "Hide"]])}</div>
         <div><label class="sub" for="qOnly">Only from</label>
-          <select id="qOnly" class="chin"><option value="">Anywhere</option>${visible.map((s) => `<option value="${esc(s.name)}" ${s.name === cfg.quoteSource ? "selected" : ""}>${esc(s.name)} (${s.count})</option>`).join("")}</select></div>
+          <select id="qOnly" class="chin"><option value="">Anywhere</option>${options}</select></div>
       </div>
       <div class="sub">${n ? `${n} ${n === 1 ? "quote matches" : "quotes match"}. Each galley picks one at random; <kbd>tab</kbd> skips to another.` : "Nothing matches that yet, so quote mode will widen the search until something does."}</div>`;
     $("#qPool").querySelectorAll("[data-k]").forEach((b) => b.onclick = () => { h.onCfg({ [b.dataset.k]: JSON.parse(b.dataset.v) }); drawPool(); });
     $("#qOnly").onchange = (e) => { h.onCfg({ quoteSource: e.target.value || null }); drawPool(); };
     $("#qSources").innerHTML = srcs.filter((s) => s.origin !== "library").map((s) => `<option value="${esc(s.name)}">`).join("");
+    const known = new Set([...filterQuotes(p, { from: "mine" }), ...filterQuotes(p, { from: "community" })].map(seriesOf).filter(Boolean));
+    $("#qSeriesList").innerHTML = [...known].sort().map((x) => `<option value="${esc(x)}">`).join("");
   }
 
   /* ---------- the list ---------- */
@@ -157,7 +164,8 @@ The second quote.
   }
   function row(q) {
     const who = [q.by, q.source].filter(Boolean).join(", ");
-    const tag = q.origin === "library" ? ` · ${esc(CATEGORIES[q.cat] || "")}` : q.origin === "community" && q.name ? ` · added by ${esc(q.name)}` : "";
+    const sr = seriesOf(q);
+    const tag = (sr && sr !== q.source ? ` · ${esc(sr)}` : "") + (q.origin === "library" ? ` · ${esc(CATEGORIES[q.cat] || "")}` : q.origin === "community" && q.name ? ` · added by ${esc(q.name)}` : "");
     const lang = (q.flags || []).includes("language") ? ` · strong language` : "";
     let act = `<button type="button" class="go" data-type="${esc(q.id)}">Type</button>`;
     if (q.origin === "mine") {
@@ -242,7 +250,7 @@ The second quote.
       return `<div class="qrev" data-id="${esc(q.id)}">
         <div class="qrevhead">${chips}<span class="sub">from ${esc(q.name || "a player")} · ${new Date(q.at).toLocaleDateString(undefined, { day: "numeric", month: "short" })}</span></div>
         <textarea class="chin qarea" rows="2" data-f="text">${esc(q.text)}</textarea>
-        <div class="qpair"><input class="chin" data-f="source" value="${esc(q.source)}" aria-label="From"><input class="chin" data-f="by" value="${esc(q.by || "")}" placeholder="Who said it" aria-label="Who said it"></div>
+        <div class="qtrio"><input class="chin" data-f="source" value="${esc(q.source)}" aria-label="From"><input class="chin" data-f="by" value="${esc(q.by || "")}" placeholder="Who said it" aria-label="Who said it"><input class="chin" data-f="series" value="${esc(q.series || "")}" placeholder="${esc(guessSeries(q.source) || "Series")}" aria-label="Series"></div>
         <div class="sactions">
           <button type="button" class="go primary" data-act="${q.status === "pending" ? "approve" : "restore"}">${q.status === "pending" ? "Approve" : "Keep it live"}</button>
           <select class="chin qreject">${reasons}</select>
@@ -257,8 +265,8 @@ The second quote.
         const reason = el.querySelector(".qreject").value;
         if ((action === "reject" || action === "remove") && !reason) { msg(out, "Pick a reason first.", true); return; }
         const f = (k) => el.querySelector(`[data-f="${k}"]`).value;
-        const edits = { text: f("text"), source: f("source"), by: f("by") };
-        const changed = edits.text !== q.text || edits.source !== q.source || edits.by !== (q.by || "");
+        const edits = { text: f("text"), source: f("source"), by: f("by"), series: f("series") };
+        const changed = edits.text !== q.text || edits.source !== q.source || edits.by !== (q.by || "") || edits.series !== (q.series || "");
         el.querySelectorAll("button,select").forEach((x) => { x.disabled = true; });
         try {
           await h.review(id, action, { reason: reason || undefined, edits: action === "approve" && changed ? edits : undefined });
@@ -287,19 +295,25 @@ The second quote.
   function startEdit(id) {
     const q = h.mine().find((x) => x.id === id); if (!q) return;
     ui.editing = id;
-    $("#qText").value = q.text; $("#qSource").value = q.source || ""; $("#qBy").value = q.by || "";
+    $("#qText").value = q.text; $("#qSource").value = q.source || ""; $("#qBy").value = q.by || ""; $("#qSeries").value = q.series || ""; hintSeries();
     $("#qFormHead").textContent = "Edit quote"; $("#qAdd").textContent = "Save changes"; $("#qCancel").hidden = false;
     msg($("#qMsg"), h.shared().has(sharedId(q.text)) ? "Edits change your copy; the shared one stays as it was reviewed." : "");
     $("#qText").focus(); $("#qText").scrollIntoView({ block: "center", behavior: "smooth" });
   }
   function stopEdit() {
     ui.editing = null;
-    $("#qText").value = ""; $("#qBy").value = "";
+    $("#qText").value = ""; $("#qBy").value = ""; $("#qSeries").value = "";
     $("#qFormHead").textContent = "Add a quote"; $("#qAdd").textContent = "Add quote"; $("#qCancel").hidden = true;
   }
   $("#qCancel").onclick = () => { stopEdit(); msg($("#qMsg"), ""); };
+  // the series box shows what it'll be filed under if left empty
+  function hintSeries() {
+    const g = guessSeries($("#qSource").value);
+    $("#qSeries").placeholder = g ? `${g} (worked out from "From")` : "Leave empty if it's a one-off";
+  }
+  $("#qSource").addEventListener("input", hintSeries);
   $("#qAdd").onclick = async () => {
-    const fields = { text: $("#qText").value, source: $("#qSource").value, by: $("#qBy").value };
+    const fields = { text: $("#qText").value, source: $("#qSource").value, by: $("#qBy").value, series: $("#qSeries").value };
     if (ui.editing) {
       const r = updateQuote(h.mine(), ui.editing, fields);
       if (r.error) return msg($("#qMsg"), r.error, true);
@@ -350,7 +364,7 @@ The second quote.
     msg($("#qBulkMsg"), `Exported ${mine.length}.`);
   };
 
-  drawShare(); drawPool(); drawList();
+  drawShare(); drawPool(); drawList(); hintSeries();
   // fresh copies of everyone's quotes and your submissions, then the queue for admins
   h.refresh().then(() => { if (view.isConnected) { drawShare(); drawPool(); drawList(); } }).catch(() => {});
   if (h.admin()) loadQueue();
