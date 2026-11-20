@@ -79,6 +79,8 @@ export function createFakeCloud() {
       if (r.error) throw Object.assign(new Error(r.error), { code: "failed-precondition" });
       q[id] = action === "restore" ? { ...r.doc, reportList: [] } : r.doc; save(d); return { ok: true, quote: r.doc };
     },
+    async getSaved(uid) { return (load().saved || {})[uid] ?? null; },
+    async foldSaved(uid, fn) { const d = load(); d.saved ??= {}; const next = fn(d.saved[uid] ?? null); d.saved[uid] = { v: 1, ...next, updated: Date.now() }; save(d); return next; },
     async deleteAll(uid) { const d = load(); delete d.accounts[uid]; delete d.results[uid]; save(d); }
   };
 }

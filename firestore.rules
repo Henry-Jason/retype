@@ -3,6 +3,7 @@ rules_version = '2';
 // Each person can read and write only their own data:
 //   users/{uid}                  the account document (bests, weak words, streak days, totals, top plays)
 //   users/{uid}/results/{id}     one document per finished galley; never edited once written
+//   users/{uid}/saved/quotes     your own quotes and favourites, so they follow you between devices
 //   profiles/{uid}               a display name, public so boards can show it
 //   boards/{board}/entries/{uid} leaderboard entries: anyone can read, only the Cloud Function
 //                                (functions/index.js) writes, after re-checking the galley
@@ -38,6 +39,20 @@ service cloud.firestore {
       allow read: if isOwner(uid);
       allow create, update: if isOwner(uid) && validAccount(request.resource.data);
       allow delete: if isOwner(uid);
+
+      // your own quotes and favourites, merged between devices by the browser (core/quote-sync.js)
+      match /saved/{doc} {
+        function validSaved(d) {
+          return doc == 'quotes'
+            && d.keys().hasOnly(['v', 'quotes', 'deleted', 'favs', 'updated'])
+            && d.quotes is list && d.quotes.size() <= 5000
+            && d.deleted is map && d.deleted.size() <= 2000
+            && d.favs is map && d.favs.size() <= 10000
+            && d.updated is int;
+        }
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid) && validSaved(request.resource.data);
+      }
 
       match /results/{rid} {
         function validResult(d) {

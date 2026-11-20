@@ -104,6 +104,22 @@ describe("leaderboards", () => {
   });
 });
 
+describe("your saved quotes", () => {
+  const saved = () => ({ v: 1, quotes: [{ id: "u1", text: "a quote", source: "S", at: 1 }], deleted: {}, favs: { s1: 5 }, updated: 1 });
+  it("are yours to read and write, and no one else's", async () => {
+    await assertSucceeds(setDoc(doc(as("ana"), "users/ana/saved/quotes"), saved()));
+    await assertSucceeds(getDoc(doc(as("ana"), "users/ana/saved/quotes")));
+    await assertFails(getDoc(doc(as("ben"), "users/ana/saved/quotes")));
+    await assertFails(setDoc(doc(as("ben"), "users/ana/saved/quotes"), saved()));
+    await assertFails(getDoc(doc(anon(), "users/ana/saved/quotes")));
+  });
+  it("only take the expected shape, under the one name", async () => {
+    await assertFails(setDoc(doc(as("ana"), "users/ana/saved/quotes"), { ...saved(), admin: true }));
+    await assertFails(setDoc(doc(as("ana"), "users/ana/saved/quotes"), { ...saved(), favs: ["s1"] }));
+    await assertFails(setDoc(doc(as("ana"), "users/ana/saved/other"), saved()));
+  });
+});
+
 describe("shared quotes", () => {
   const q = (id, uid, status) => ({ id, text: "a shared quote here", source: "Somewhere", by: "", uid, name: "Ana", status, flags: [], reports: 0, at: 1 });
   const seed = (id, data) => env.withSecurityRulesDisabled((c) => setDoc(doc(c.firestore(), "quotes/" + id), data));
