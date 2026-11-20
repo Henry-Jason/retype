@@ -33,7 +33,7 @@ export function renderQuotes(view, h) {
       <h1>Quotes</h1>
       <div class="sactions"><button type="button" class="go primary" id="qType">Type a quote</button><button type="button" class="go" id="qBack">Back to typing <kbd>esc</kbd></button></div>
     </div>
-    <p class="lede">Type a quote instead of random words: from the library of ${LIBRARY.length}, from everyone's, or your own. Share yours and, once they've been reviewed, everyone can type them too.</p>
+    <p class="lede">Type a quote instead of random words: from the library of ${LIBRARY.length}, from everyone's, or your own. Share yours and, once they've been reviewed, everyone can type them too. <span id="qSync"></span></p>
     <div class="sgrid">
       <div class="scard wide" id="qPool"></div>
       <div class="qtwo"><div class="scard">
@@ -93,7 +93,7 @@ The second quote.
       const id = box.dataset.share;
       box.innerHTML = h.signedIn()
         ? `<label class="qcheck"><input type="checkbox" id="${id}" ${shareDefault ? "checked" : ""}> Share with everyone</label><span class="sub">${h.admin() ? "A filter checks it; as an admin, yours go live straight away." : "A filter checks it, then it's reviewed before anyone else sees it."}</span>`
-        : `<span class="sub">Quotes you add stay in this browser. <button type="button" class="linkbtn" data-signin>Sign in</button> to share them with everyone.</span>`;
+        : `<span class="sub">Quotes you add stay in this browser. <button type="button" class="linkbtn" data-signin>Sign in</button> to keep them (and your favourites) on every device, and to share them.</span>`;
       box.querySelector("input")?.addEventListener("change", (e) => {
         shareDefault = e.target.checked;
         try { localStorage.setItem("retype-share", shareDefault ? "1" : "0"); } catch { /* fine */ }
@@ -378,8 +378,9 @@ The second quote.
     msg($("#qBulkMsg"), `Exported ${mine.length}.`);
   };
 
-  drawShare(); drawPool(); drawList(); hintSeries();
+  const drawSync = () => { const n = h.syncNote?.(); $("#qSync").textContent = n === "synced" ? "Your quotes and favourites are saved to your account, so they're on every device you sign in on." : n || ""; };
+  drawShare(); drawPool(); drawList(); hintSeries(); drawSync();
   // fresh copies of everyone's quotes and your submissions, then the queue for admins
-  h.refresh().then(() => { if (view.isConnected) { drawShare(); drawPool(); drawList(); } }).catch(() => {});
+  h.refresh().then(() => { if (view.isConnected) { drawShare(); drawPool(); drawList(); drawSync(); } }).catch(() => {});
   if (h.admin()) loadQueue();
 }

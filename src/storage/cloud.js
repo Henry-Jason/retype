@@ -103,6 +103,22 @@ export async function createCloud(config, { emulators = false } = {}) {
     /** Ask the server to score the galleys this account had before PP existed (once). */
     backfillPp: () => call("backfillPp"),
 
+    /* ---------- your quotes and favourites ---------- */
+    async getSaved(uid) {
+      const s = await F.getDoc(F.doc(db, "users", uid, "saved", "quotes"));
+      return s.exists() ? s.data() : null;
+    },
+    /** Read your saved quotes, merge in this browser's with fn, and write the result back, atomically. */
+    async foldSaved(uid, fn) {
+      const ref = F.doc(db, "users", uid, "saved", "quotes");
+      return F.runTransaction(db, async (tx) => {
+        const s = await tx.get(ref);
+        const next = fn(s.exists() ? s.data() : null);
+        tx.set(ref, { v: 1, quotes: next.quotes, deleted: next.deleted, favs: next.favs, updated: Date.now() });
+        return next;
+      });
+    },
+
     /* ---------- shared quotes ---------- */
     /** Every approved quote; anyone can read these, signed in or not. */
     async approvedQuotes() { return rows(await F.getDocs(F.query(quotes, F.where("status", "==", "approved"), F.limit(5000)))); },

@@ -21,8 +21,9 @@ import { levelFrom } from "../core/levels.js";
 import { cleanName } from "../core/sync.js";
 import { $, esc, pad, stampDate, uuid } from "./util.js";
 import { pickQuote, words as quoteWords, LENGTHS as QUOTE_LENGTHS, addQuotes } from "../core/quotes.js";
-import { loadQuotes, saveQuotes, loadCommunity, saveCommunity, slim, STALE, loadFavs, saveFavs } from "../storage/quote-store.js";
-import { REPORT_REASONS, toggleFav, isFav } from "../core/quotes.js";
+import { loadQuotes, saveQuotes, loadCommunity, saveCommunity, slim, STALE, loadFavs, saveFavs, loadDeleted, saveDeleted, forgetSaved } from "../storage/quote-store.js";
+import { REPORT_REASONS, isFav, favKey } from "../core/quotes.js";
+import { mergeSaved, recordChange, setFav, favKeys, sameSaved, checkSize, emptySaved } from "../core/quote-sync.js";
 import { renderQuotes } from "./quotes.js";
 
 export function startApp({ cfg, store, progress, accountsEnabled = false, cloudReady = Promise.resolve(null) }) {
@@ -39,12 +40,60 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
   let notice = "";
   let myQuotes = loadQuotes();
   // everyone's quotes (cached), what you've sent in, and whether you review them
-  let community = loadCommunity(), shared = new Map(), admin = false, queueCount = 0, favs = loadFavs();
-  const pools = () => ({ mine: myQuotes, community: community.list, favs: new Set(favs) });
+  let community = loadCommunity(), shared = new Map(), admin = false, queueCount = 0, favs = loadFavs(), deleted = loadDeleted();
+  const pools = () => ({ mine: myQuotes, community: community.list, favs: new Set(favKeys(favs)) });
+
+  /* ---------- your quotes and favourites, synced to the account ---------- */
+  let savedTimer = null, savedBusy = false, savedAgain = false, savedError = "";
+  const localSaved = () => ({ quotes: myQuotes, deleted, favs });
+  function keepSaved(rec) {
+    myQuotes = rec.quotes; deleted = rec.deleted; favs = rec.favs;
+    saveQuotes(myQuotes); saveDeleted(deleted); saveFavs(favs);
+  }
+  /** Change your quote list (add, edit, delete): stamps the change and sends it to the account soon. */
+  function setMine(list) {
+    keepSaved(recordChange(localSaved(), list));
+    scheduleSavedSync();
+    return true;
+  }
+  function scheduleSavedSync() {
+    if (!user) return;
+    clearTimeout(savedTimer);
+    savedTimer = setTimeout(() => syncSaved().catch(() => {}), 1200);
+  }
+  /** Merge this browser's quotes and favourites with the account's, both ways. */
+  async function syncSaved() {
+    const c = cloud, uid = user?.uid;
+    if (!c?.foldSaved || !uid) return;
+    if (savedBusy) { savedAgain = true; return; }
+    savedBusy = true;
+    try {
+      const sent = localSaved();
+      let tooBig = null;
+      const merged = await c.foldSaved(uid, (remote) => {
+        const m = mergeSaved(sent, remote || emptySaved());
+        tooBig = checkSize(m);
+        if (tooBig) throw new Error(tooBig);
+        return m;
+      });
+      if (user?.uid !== uid) return; // signed out meanwhile
+      // anything changed here while that was in flight is merged on top, and goes next time
+      const now = mergeSaved(localSaved(), merged);
+      keepSaved(now);
+      if (!sameSaved(now, merged)) savedAgain = true;
+      savedError = "";
+    } catch (e) {
+      savedError = e?.message || "couldn't sync your quotes";
+      console.warn("Quote sync failed", e);
+    } finally {
+      savedBusy = false;
+      if (savedAgain) { savedAgain = false; scheduleSavedSync(); }
+    }
+  }
   const HEART = (on) => `<svg viewBox="0 0 24 24" width="14" height="14" fill="${on ? "currentColor" : "none"}" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7.5-4.6-9.6-9.2C.9 8.4 3 4.5 6.8 4.5c2.1 0 3.6 1.1 5.2 3 1.6-1.9 3.1-3 5.2-3 3.8 0 5.9 3.9 4.4 7.3C19.5 16.4 12 21 12 21z"/></svg>`;
   /** Heart or un-heart a quote; returns whether it's now a favourite. */
   function favourite(q) {
-    favs = toggleFav(favs, q); saveFavs(favs);
+    favs = setFav(favs, favKey(q), !isFav(pools(), q)); saveFavs(favs); scheduleSavedSync();
     const on = isFav(pools(), q);
     toast(on ? "Added to your favourites." : "Removed from your favourites.");
     return on;
@@ -268,9 +317,10 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     if (!cloud) return;
     await cloud.signOut();
     user = null; sync = "idle"; admin = false; shared = new Map(); queueCount = 0;
+    clearTimeout(savedTimer); forgetSaved(); myQuotes = []; favs = {}; deleted = {};
     await forgetAccount(store);
     state = await loadProgress(store);
-    toast("Signed out. Your progress is safe in your account; this browser starts fresh.");
+    toast("Signed out. Your progress, quotes and favourites are safe in your account; this browser starts fresh.");
     updateStanding();
     newTest({ kind: "normal" });
     route();
@@ -288,6 +338,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
         try { boardName = await ensureProfile({ cloud: c, user: u }); } catch (e) { console.warn("Couldn't set up the board name", e); }
         ensurePpBoard({ cloud: c, uid: u.uid, state }).catch((e) => console.warn("Couldn't score older galleys for the PP board", e));
         if (c.isAdmin) { admin = await c.isAdmin(u.uid); refreshQueueCount(); }
+        syncSaved().then(() => { if (location.hash === "#quotes") route(); });
         refreshQuotes().then(() => { if (location.hash === "#quotes") route(); }).catch((e) => console.warn("Couldn't load shared quotes", e));
         if (first && sync === "synced") toast(`Signed in as ${u.name || u.email}. Your galleys are now saved to your account.`);
       } else if (!u && user) {
@@ -934,7 +985,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     });
     $("#btnKeep")?.addEventListener("click", (e) => {
       const out = addQuotes(myQuotes, [q]);
-      if (out.added) { myQuotes = out.list; saveQuotes(myQuotes); }
+      if (out.added) setMine(out.list);
       e.currentTarget.textContent = "Added"; e.currentTarget.disabled = true;
     });
     $("#ratio").onclick = (e) => {
@@ -1061,15 +1112,16 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       input.blur();
       renderQuotes(statsView, {
         mine: () => myQuotes, community: () => community.list, shared: () => shared, admin: () => admin, signedIn: () => !!user, cfg,
-        favs: () => new Set(favs), onFav: (q) => { favs = toggleFav(favs, q); saveFavs(favs); return isFav(pools(), q); },
+        favs: () => new Set(favKeys(favs)), onFav: (q) => { favs = setFav(favs, favKey(q), !isFav(pools(), q)); saveFavs(favs); scheduleSavedSync(); return isFav(pools(), q); },
+        syncNote: () => (user ? (savedError ? `Not synced: ${savedError}` : "synced") : null),
         onSignIn: signIn,
         share: async (list) => { const r = (await cloud.submitQuotes(list)).results; refreshQueueCount(); return r; },
         withdraw: (id) => cloud.withdrawQuote(id),
         report: (id, reason) => cloud.reportQuote(id, reason),
         review: async (id, action, extra) => { const r = await cloud.reviewQuote(id, action, extra); refreshQueueCount(); return r; },
         queue: () => cloud.quoteQueue(),
-        refresh: refreshQuotes,
-        onSave: (list) => { myQuotes = list; return saveQuotes(list); },
+        refresh: () => Promise.all([refreshQuotes(), syncSaved()]),
+        onSave: (list) => setMine(list),
         onCfg: (ch) => { Object.assign(cfg, ch); saveSettings(cfg); },
         onType: (quote) => { location.hash = ""; newTest({ kind: "quote", quote }); },
         onTypeRandom: () => { location.hash = ""; newTest(quoteSource(test?.quote?.id)); },
