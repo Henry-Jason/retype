@@ -97,3 +97,14 @@ describe("the queue", () => {
     expect(review(live, { action: "restore" }, 10).doc).toMatchObject({ status: "approved", reports: 0 });
   });
 });
+
+describe("admins", () => {
+  it("have no caps, and what they share goes live at once", async () => {
+    const { limitsFor, submission, screenQuote, SHARE_RULES } = await import("../src/core/moderation.js");
+    expect(limitsFor(false)).toEqual({ perDay: SHARE_RULES.perDay, pending: SHARE_RULES.pending, status: "pending" });
+    expect(limitsFor(true)).toMatchObject({ perDay: Infinity, pending: Infinity, status: "approved" });
+    const s = screenQuote({ text: "An admin's quote goes live at once", source: "Somewhere" });
+    expect(submission({ quote: s.quote, flags: s.flags, uid: "root", name: "Henry", now: 7, status: "approved" })).toMatchObject({ status: "approved", reviewedAt: 7 });
+    expect(submission({ quote: s.quote, flags: s.flags, uid: "ana", name: "Ana", now: 7 })).toMatchObject({ status: "pending", reviewedAt: null });
+  });
+});

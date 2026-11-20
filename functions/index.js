@@ -7,7 +7,7 @@ import { initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { boardEntry, DAY_MS } from "./board.js";
 import { ppPlay, nextEntry } from "./pp.js";
-import { screenQuote, submission, existingVerdict, countToday, review, report, sharedId, SHARE_RULES } from "./shared/core/moderation.js";
+import { screenQuote, submission, existingVerdict, countToday, review, report, sharedId, SHARE_RULES, limitsFor } from "./shared/core/moderation.js";
 
 initializeApp();
 // europe-west1 sits beside the eur3 Firestore database; the cap keeps a runaway from costing money
@@ -112,35 +112,37 @@ const needUser = (req) => {
   if (!uid) throw new HttpsError("unauthenticated", "Sign in first.");
   return uid;
 };
+const isAdmin = async (uid) => (await db.doc(`admins/${uid}`).get()).exists;
 const needAdmin = async (req) => {
   const uid = needUser(req);
-  if (!(await db.doc(`admins/${uid}`).get()).exists) throw new HttpsError("permission-denied", "Admins only.");
+  if (!(await isAdmin(uid))) throw new HttpsError("permission-denied", "Admins only.");
   return uid;
 };
 
-/** quotes: [{ text, source, by }]. Returns one { id, ok, reason } per quote, in order. */
+/** quotes: [{ text, source, by, series }]. Returns one { id, ok, live, reason } per quote, in order. Admins skip the caps and the queue. */
 export const submitQuotes = onCall(async (req) => {
   const uid = needUser(req);
   const list = Array.isArray(req.data?.quotes) ? req.data.quotes.slice(0, SHARE_RULES.batch) : [];
   if (!list.length) throw new HttpsError("invalid-argument", "No quotes sent.");
-  const pending = (await db.collection("quotes").where("uid", "==", uid).where("status", "==", "pending").count().get()).data().count;
+  const lim = limitsFor(await isAdmin(uid));
+  const pending = lim.pending === Infinity ? 0 : (await db.collection("quotes").where("uid", "==", uid).where("status", "==", "pending").count().get()).data().count;
   const name = await nameOf(uid), now = Date.now(), limitRef = db.doc(`quoteLimits/${uid}`);
   return db.runTransaction(async (tx) => {
     const screened = list.map((q) => (q && typeof q === "object" ? screenQuote({ text: q.text, source: q.source, by: q.by, series: q.series }) : { ok: false, reason: "Not a quote." }));
     const ids = screened.map((s) => (s.ok ? sharedId(s.quote.text) : null));
     const existing = await Promise.all(ids.map((id) => (id ? tx.get(quoteRef(id)) : null)));
     const limit = countToday((await tx.get(limitRef)).data(), now);
-    let room = Math.min(SHARE_RULES.perDay - limit.n, SHARE_RULES.pending - pending), added = 0;
+    let room = Math.min(lim.perDay - limit.n, lim.pending - pending), added = 0;
     const seen = new Set(), out = [];
     screened.forEach((s, i) => {
       const id = ids[i];
       if (!s.ok) return out.push({ id, ok: false, reason: s.reason });
       if (existing[i]?.exists) return out.push({ id, ok: false, reason: existingVerdict(existing[i].data(), uid) });
       if (seen.has(id)) return out.push({ id, ok: false, reason: "That's in this list twice." });
-      if (room <= 0) return out.push({ id, ok: false, reason: limit.n + added >= SHARE_RULES.perDay ? `That's ${SHARE_RULES.perDay} for today; send the rest tomorrow.` : `You have ${SHARE_RULES.pending} waiting for review; send more once some are through.` });
+      if (room <= 0) return out.push({ id, ok: false, reason: limit.n + added >= lim.perDay ? `That's ${lim.perDay} for today; send the rest tomorrow.` : `You have ${lim.pending} waiting for review; send more once some are through.` });
       seen.add(id); room--; added++;
-      tx.set(quoteRef(id), submission({ quote: s.quote, flags: s.flags, uid, name, now }));
-      out.push({ id, ok: true });
+      tx.set(quoteRef(id), submission({ quote: s.quote, flags: s.flags, uid, name, now, status: lim.status }));
+      out.push({ id, ok: true, live: lim.status === "approved" });
     });
     if (added) tx.set(limitRef, { day: limit.day, n: limit.n + added });
     return { results: out };

@@ -90,7 +90,7 @@ The second quote.
     view.querySelectorAll("[data-share]").forEach((box) => {
       const id = box.dataset.share;
       box.innerHTML = h.signedIn()
-        ? `<label class="qcheck"><input type="checkbox" id="${id}" ${shareDefault ? "checked" : ""}> Share with everyone</label><span class="sub">A filter checks it, then it's reviewed before anyone else sees it.</span>`
+        ? `<label class="qcheck"><input type="checkbox" id="${id}" ${shareDefault ? "checked" : ""}> Share with everyone</label><span class="sub">${h.admin() ? "A filter checks it; as an admin, yours go live straight away." : "A filter checks it, then it's reviewed before anyone else sees it."}</span>`
         : `<span class="sub">Quotes you add stay in this browser. <button type="button" class="linkbtn" data-signin>Sign in</button> to share them with everyone.</span>`;
       box.querySelector("input")?.addEventListener("change", (e) => {
         shareDefault = e.target.checked;
@@ -103,20 +103,23 @@ The second quote.
   const sharing = () => h.signedIn() && shareDefault;
 
   /** Send quotes off for review; returns a sentence about how it went. */
-  async function share(list) {
-    let ok = 0; const no = [];
+  async function share(list, onProgress) {
+    let ok = 0, live = 0; const no = [];
     for (let i = 0; i < list.length; i += 25) {
       let res;
+      if (list.length > 25 && onProgress) onProgress(Math.min(i + 25, list.length), list.length);
       try { res = await h.share(list.slice(i, i + 25).map(({ text, source, by, series }) => ({ text, source, by, series: series || "" }))); }
       catch (e) { no.push(errText(e)); break; }
-      for (const r of res) r.ok ? ok++ : no.push(r.reason);
+      for (const r of res) { if (r.ok) { ok++; if (r.live) live++; } else no.push(r.reason); }
     }
     await h.refresh().catch(() => {});
     if (h.admin() && ok) await loadQueue();
     drawList();
-    if (!no.length) return { text: ok === 1 ? "Sent for review." : `${ok} sent for review.`, bad: false };
+    // admins' quotes go live at once; everyone else's wait for review
+    const sent = !ok ? "" : live === ok ? (ok === 1 ? "Shared: it's live." : `${ok} shared, live now.`) : ok === 1 ? "Sent for review." : `${ok} sent for review.`;
+    if (!no.length) return { text: sent, bad: false };
     const why = [...new Set(no)];
-    return { text: `${ok ? `${ok} sent for review; ` : ""}${no.length === 1 ? "not shared" : `${no.length} not shared`}: ${why.slice(0, 2).join(" ")}`, bad: !ok };
+    return { text: `${sent ? sent.replace(/\.$/, ";") + " " : ""}${no.length === 1 ? "not shared" : `${no.length} not shared`}: ${why.slice(0, 2).join(" ")}`, bad: !ok };
   }
 
   /* ---------- what quote mode draws from ---------- */
@@ -351,7 +354,7 @@ The second quote.
     msg($("#qBulkMsg"), bits.join(", ") + ".", !r.added);
     if (r.added && sharing()) {
       msg($("#qBulkMsg"), bits.join(", ") + ". Sending for review…");
-      const s = await share(r.list.slice(before));
+      const s = await share(r.list.slice(before), (n, of) => msg($("#qBulkMsg"), `${bits.join(", ")}. Sharing ${n} of ${of}…`));
       msg($("#qBulkMsg"), bits.join(", ") + ". " + s.text, s.bad);
     }
   };
