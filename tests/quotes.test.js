@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { LIBRARY, clean, words, lengthOf, quoteId, pickQuote, filterQuotes, sources, makeQuote, addQuotes, updateQuote, parseImport, exportQuotes } from "../src/core/quotes.js";
+import { LIBRARY, clean, words, lengthOf, quoteId, pickQuote, filterQuotes, sources, sourceTree, sourceValues, guessSeries, seriesOf, makeQuote, addQuotes, updateQuote, parseImport, exportQuotes } from "../src/core/quotes.js";
 import { encodeChallenge, decodeChallenge } from "../src/core/challenge.js";
 import { modeKey, updateBests } from "../src/core/progress.js";
 import { countsForPp } from "../src/core/pp.js";
@@ -141,6 +141,55 @@ Third quote with no attribution`, "Default");
   it("round-trips the export", () => {
     const { list } = addQuotes([], [{ text: "a quote to keep", source: "S", by: "B" }]);
     expect(parseImport(exportQuotes(list))).toEqual([{ text: "a quote to keep", source: "S", by: "B" }]);
+  });
+});
+
+describe("series", () => {
+  it("works out the common franchises from the source", () => {
+    const cases = {
+      "Harry Potter and the Goblet of Fire": "Harry Potter", "Harry Potter": "Harry Potter", "Harry Potter and the Methods of Rationality": null,
+      "The Hobbit: The Battle of the Five Armies": "Middle-earth", "The Lord of the Rings": "Middle-earth",
+      "Avengers: Endgame": "Marvel Cinematic Universe", "Thor: Ragnarok": "Marvel Cinematic Universe", "Iron Man": "Marvel Cinematic Universe",
+      "Iron Man 3": "Marvel Cinematic Universe", "Loki": "Marvel Cinematic Universe", "Spider-Man: Homecoming": "Marvel Cinematic Universe",
+      "Spider-Man: Into the Spider-Verse": "Spider-Man", "The Amazing Spider-Man 2": "Spider-Man", "Marvel's Spider-Man (2018 game)": "Spider-Man",
+      "The Dark Knight Rises": "Batman", "Joker": null, "Better Call Saul": "Breaking Bad", "The Legend of Korra": "Avatar: The Last Airbender",
+      "A Game of Thrones": "Game of Thrones", "God Emperor of Dune": "Dune", "3 Body Problem": "Three-Body", "The Witcher 3: Wild Hunt": "The Witcher",
+      "Arcane": null, "Ironheart": "Marvel Cinematic Universe", "Thorin's Song": null, "": null
+    };
+    for (const [src, want] of Object.entries(cases)) expect(guessSeries(src), src).toBe(want);
+  });
+  const mine = [
+    { id: "a", text: "one two three four", source: "Harry Potter and the Goblet of Fire" },
+    { id: "b", text: "five six seven eight", source: "Harry Potter and the Deathly Hallows" },
+    { id: "c", text: "nine ten eleven twelve", source: "Avengers: Endgame" },
+    { id: "d", text: "a quote from a fan film", source: "My Fan Film", series: "Harry Potter" },
+    { id: "e", text: "just a one off here", source: "Arcane" }
+  ];
+  it("filters by a whole series, or by one source in it", () => {
+    expect(filterQuotes(mine, { from: "mine", source: "series:Harry Potter" }).map((q) => q.id)).toEqual(["a", "b", "d"]);
+    expect(filterQuotes(mine, { from: "mine", source: "Harry Potter and the Goblet of Fire" }).map((q) => q.id)).toEqual(["a"]);
+    expect(pickQuote(mine, { from: "mine", source: "series:Marvel Cinematic Universe" }, mulberry32(1)).quote.id).toBe("c");
+    expect(seriesOf(LIBRARY[0])).toBeNull();
+  });
+  it("groups sources under a series only when the series covers more than itself", () => {
+    const tree = sourceTree(mine, { from: "mine" });
+    const hp = tree.find((x) => x.name === "Harry Potter");
+    expect(hp).toMatchObject({ value: "series:Harry Potter", count: 3 });
+    expect(hp.sources.map((s) => s.name)).toEqual(["Harry Potter and the Deathly Hallows", "Harry Potter and the Goblet of Fire", "My Fan Film"]);
+    // a series with one source that isn't named after it still groups (Endgame under the MCU); a one-off stays loose
+    expect(tree.find((x) => x.name === "Marvel Cinematic Universe").sources.map((s) => s.name)).toEqual(["Avengers: Endgame"]);
+    expect(tree.find((x) => x.name === "Arcane")).toMatchObject({ value: "Arcane", count: 1 });
+    expect(sourceValues(tree)).toContain("series:Harry Potter");
+    expect(sourceValues(tree)).toContain("Avengers: Endgame");
+  });
+  it("only stores a series when it differs from the guess", () => {
+    expect(makeQuote({ text: "a b c", source: "Harry Potter", series: "Harry Potter" }).quote.series).toBeUndefined();
+    expect(makeQuote({ text: "a b c", source: "My Fan Film", series: "Harry Potter" }).quote.series).toBe("Harry Potter");
+  });
+  it("reads and exports a series field", () => {
+    expect(parseImport(`{ "text": "a b c", "source": "S", "franchise": "F" }`)).toEqual([{ text: "a b c", source: "S", by: "", series: "F" }]);
+    const { list } = addQuotes([], [{ text: "a quote here", source: "S", series: "F" }]);
+    expect(JSON.parse(exportQuotes(list))[0]).toEqual({ text: "a quote here", source: "S", by: "", series: "F" });
   });
 });
 

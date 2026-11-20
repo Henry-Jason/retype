@@ -126,7 +126,7 @@ export const submitQuotes = onCall(async (req) => {
   const pending = (await db.collection("quotes").where("uid", "==", uid).where("status", "==", "pending").count().get()).data().count;
   const name = await nameOf(uid), now = Date.now(), limitRef = db.doc(`quoteLimits/${uid}`);
   return db.runTransaction(async (tx) => {
-    const screened = list.map((q) => (q && typeof q === "object" ? screenQuote({ text: q.text, source: q.source, by: q.by }) : { ok: false, reason: "Not a quote." }));
+    const screened = list.map((q) => (q && typeof q === "object" ? screenQuote({ text: q.text, source: q.source, by: q.by, series: q.series }) : { ok: false, reason: "Not a quote." }));
     const ids = screened.map((s) => (s.ok ? sharedId(s.quote.text) : null));
     const existing = await Promise.all(ids.map((id) => (id ? tx.get(quoteRef(id)) : null)));
     const limit = countToday((await tx.get(limitRef)).data(), now);

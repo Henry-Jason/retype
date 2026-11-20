@@ -439,3 +439,5 @@ details summary{cursor:pointer;color:var(--ink)}
 .qhelp summary{cursor:pointer;font-weight:600;color:var(--pencil)}
 .qhelp p{margin:8px 0}
 .qhelp pre{margin:4px 0 8px;padding:8px 10px;background:var(--chip);border-radius:6px;font:12.5px/1.45 "Courier Prime",monospace;color:var(--ink);white-space:pre-wrap}
+.qtrio{display:grid;grid-template-columns:2fr 1.5fr 1.5fr;gap:10px}
+@media (max-width:600px){.qtrio{grid-template-columns:1fr}}

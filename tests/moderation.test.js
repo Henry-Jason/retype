@@ -75,6 +75,13 @@ describe("the queue", () => {
     expect(review(doc, { action: "approve", edits: { text: "Something else entirely different here" } }, 9).error).toBeTruthy();
     expect(review(doc, { action: "approve", edits: { text: "We are the ones we've been waiting for." } }, 9).doc.text).toBe("We are the ones we've been waiting for.");
   });
+  it("keeps a series through submission and review edits", () => {
+    const s = screenQuote({ text: "A line from a fan film for testing", source: "My Fan Film", series: "Harry Potter" });
+    const d = submission({ quote: s.quote, flags: s.flags, uid: "ana", name: "Ana", now: 1 });
+    expect(d.series).toBe("Harry Potter");
+    expect(review(d, { action: "approve", edits: { series: "Fantastic Beasts" } }, 2).doc.series).toBe("Fantastic Beasts");
+    expect(screenQuote({ text: "A perfectly fine line here", source: "Show", series: "visit example.com" }).ok).toBe(false);
+  });
   it("rejects only with a reason", () => {
     expect(review(doc, { action: "reject" }, 9).error).toBeTruthy();
     expect(review(doc, { action: "reject", reason: "fake" }, 9).doc).toMatchObject({ status: "rejected", reason: "fake" });

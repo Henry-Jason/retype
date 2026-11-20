@@ -71,6 +71,41 @@ export const findQuote = (id, p) => allQuotes(p).find((q) => q.id === id) || nul
 /** The source a quote is filed under for filtering: what it's from, or who said it if that's all there is. */
 export const sourceOf = (q) => (q.origin === "library" || (!q.mine && !q.community) ? CATEGORIES[q.cat] || "Library" : q.source || q.by || "Untitled");
 
+/* ---------- series: franchises and universes that group several sources ---------- */
+
+// Guesses for common cases, so nobody has to fill the field in. Order matters: the first match wins.
+const MCU = ["Iron Man", "The Incredible Hulk", "Thor", "Captain America", "The Avengers", "Avengers:", "Guardians of the Galaxy",
+  "Ant-Man", "Doctor Strange", "Spider-Man: Homecoming", "Spider-Man: Far From Home", "Spider-Man: No Way Home", "Black Panther",
+  "Black Widow", "Captain Marvel", "Shang-Chi", "Eternals", "WandaVision", "Loki", "The Falcon and the Winter Soldier", "Hawkeye",
+  "Moon Knight", "Ms. Marvel", "She-Hulk", "Secret Invasion", "Echo", "Agatha All Along", "Deadpool & Wolverine", "The Marvels",
+  "Thunderbolts", "What If...?", "Daredevil: Born Again", "The Fantastic Four: First Steps", "Ironheart"];
+export const SERIES_RULES = [
+  ["Harry Potter", (s) => /^Harry Potter and the (Philosopher's|Sorcerer's|Chamber|Prisoner|Goblet|Order|Half-Blood|Deathly)/i.test(s) || /^(Harry Potter|Fantastic Beasts)\b(?!.*Methods of Rationality)/i.test(s)],
+  ["Middle-earth", (s) => /^(The Hobbit|The Lord of the Rings|The Fellowship of the Ring|The Two Towers|The Return of the King|The Silmarillion|The Rings of Power)\b/i.test(s)],
+  ["Marvel Cinematic Universe", (s) => s === "Marvel Cinematic Universe" || MCU.some((t) => s === t || (t.endsWith(":") ? s.startsWith(t) : s.startsWith(t + ":") || s.startsWith(t + " ") || s === t))],
+  ["Spider-Man", (s) => /spider-?man|spider-verse/i.test(s)],
+  ["Batman", (s) => /^(The Dark Knight|The Dark Knight Rises|Batman Begins|The Batman)$/i.test(s)],
+  ["Avatar: The Last Airbender", (s) => /^(Avatar: The Last Airbender|The Legend of Korra)$/i.test(s)],
+  ["Breaking Bad", (s) => /^(Breaking Bad|Better Call Saul|El Camino)/i.test(s)],
+  ["Game of Thrones", (s) => /^(A )?Game of Thrones$|^(A Clash of Kings|A Storm of Swords|A Feast for Crows|A Dance with Dragons|House of the Dragon|A Song of Ice and Fire)/i.test(s)],
+  ["Dune", (s) => /^(Dune|Dune Messiah|Children of Dune|God Emperor of Dune|Heretics of Dune|Chapterhouse: Dune)\b/i.test(s)],
+  ["Three-Body", (s) => /^(3 Body Problem|The Three-Body Problem|The Dark Forest|Death's End)$/i.test(s)],
+  ["The Witcher", (s) => /witcher/i.test(s)],
+  ["Interstellar", (s) => /^(Interstellar|The Science of Interstellar)$/i.test(s)],
+  ["Star Wars", (s) => /^(Star Wars|Andor|The Mandalorian|Rogue One|Obi-Wan Kenobi|Ahsoka)\b/i.test(s)]
+];
+// Spider-Man: Homecoming and friends are matched as Marvel first; Middle-earth before anything with "Ring" in it.
+export function guessSeries(source) {
+  const s = String(source || "").trim();
+  if (!s) return null;
+  const hit = SERIES_RULES.find(([, test]) => test(s));
+  return hit ? hit[0] : null;
+}
+/** The series a quote belongs to: the one it was given, or the guess from its source. Library quotes have none. */
+export const seriesOf = (q) => (q.origin === "library" || (!q.mine && !q.community) ? null : q.series || guessSeries(q.source));
+/** "Only from" values: a plain source name, or "series:<name>" for every source in a series. */
+export const SERIES_PREFIX = "series:";
+
 /** All sources, with how many quotes each has; yours first, then everyone's, then the library's categories. */
 export function sources(p) {
   const counts = new Map(), rank = { mine: 0, community: 1, library: 2 };
@@ -84,6 +119,35 @@ export function sources(p) {
 }
 
 /**
+ * What the "Only from" list shows: series that cover two or more sources (with their sources
+ * inside), then every other source on its own. Each entry has a value to filter by.
+ * opts.from limits it to one pool, as the quote settings do.
+ */
+export function sourceTree(p, { from = "all" } = {}) {
+  const groups = new Map(), loose = new Map(), rank = { mine: 0, community: 1, library: 2 };
+  for (const q of filterQuotes(p, { from })) {
+    const name = sourceOf(q), series = seriesOf(q);
+    const key = series || "";
+    if (!groups.has(key)) groups.set(key, { name: series, count: 0, origin: q.origin, sources: new Map() });
+    const g = groups.get(key); g.count++;
+    if (rank[q.origin] < rank[g.origin]) g.origin = q.origin;
+    const src = g.sources.get(name) || { name, value: name, count: 0, origin: q.origin };
+    src.count++; g.sources.set(name, src);
+    if (rank[q.origin] < rank[src.origin]) src.origin = q.origin;
+  }
+  const out = [];
+  for (const g of groups.values()) {
+    const list = [...g.sources.values()].sort((a, b) => a.name.localeCompare(b.name));
+    if (g.name && (list.length > 1 || list[0].name !== g.name)) out.push({ name: g.name, value: SERIES_PREFIX + g.name, count: g.count, origin: g.origin, sources: list });
+    else for (const s of list) loose.set(s.name, s);
+  }
+  const all = [...out, ...loose.values()];
+  return all.sort((a, b) => rank[a.origin] - rank[b.origin] || a.name.localeCompare(b.name));
+}
+/** Every value "Only from" could hold right now, to tell whether a saved choice still exists. */
+export const sourceValues = (tree) => tree.flatMap((x) => [x.value, ...(x.sources || []).map((s) => s.value)]);
+
+/**
  * opts: { from: "all"|"library"|"community"|"mine", len: key of LENGTHS, source: name or null,
  * search, clean: leave out quotes flagged for strong language }. With from "all", a quote of yours
  * that's also been shared (or is in the library) only counts once.
@@ -95,7 +159,7 @@ export function filterQuotes(p, { from = "all", len = "any", source = null, sear
     if (from !== "all" && from !== q.origin) return false;
     if (from === "all") { const k = q.text.toLowerCase(); if (seen.has(k)) return false; seen.add(k); }
     return (len === "any" || lengthOf(q.text) === len) &&
-      (!source || sourceOf(q) === source) &&
+      (!source || (source.startsWith(SERIES_PREFIX) ? seriesOf(q) === source.slice(SERIES_PREFIX.length) : sourceOf(q) === source)) &&
       (!tidy || !(q.flags || []).includes("language")) &&
       (!s || `${q.text} ${q.by || ""} ${q.source || ""} ${q.name || ""}`.toLowerCase().includes(s));
   });
@@ -120,11 +184,15 @@ export function pickQuote(p, opts, rand, lastId = null) {
 /* ---------- your own quotes ---------- */
 
 /** Check and tidy a quote before saving. Returns { quote } or { error }. */
-export function makeQuote({ text, source = "", by = "" }, { id, at = Date.now() } = {}) {
+export function makeQuote({ text, source = "", by = "", series = "" }, { id, at = Date.now() } = {}) {
   const t = clean(text);
   if (wordCount(t) < 2) return { error: "A quote needs at least two words." };
   if (t.length > MAX_CHARS) return { error: `Keep it under ${MAX_CHARS.toLocaleString("en-IE")} characters.` };
-  return { quote: { id: id || quoteId(t, "u"), text: t, source: clean(source).slice(0, 80), by: clean(by).slice(0, 80), at } };
+  const q = { id: id || quoteId(t, "u"), text: t, source: clean(source).slice(0, 80), by: clean(by).slice(0, 80), at };
+  // only kept when it says something the source doesn't already
+  const sr = clean(series).slice(0, 80);
+  if (sr && sr !== guessSeries(q.source)) q.series = sr;
+  return { quote: q };
 }
 
 /** Add quotes, skipping any already there (yours or the library's). Returns { list, added, skipped, errors }. */
@@ -185,7 +253,8 @@ export function parseImport(text, defaultSource = "") {
 const PICK = {
   text: ["text", "quote", "line", "content", "body"],
   source: ["source", "from", "film", "movie", "show", "series", "book", "work", "title"],
-  by: ["by", "who", "author", "character", "speaker", "person", "said_by", "saidBy"]
+  by: ["by", "who", "author", "character", "speaker", "person", "said_by", "saidBy"],
+  series: ["series", "franchise", "universe", "saga"]
 };
 const field = (o, keys) => { for (const k of keys) if (typeof o[k] === "string" && o[k].trim()) return o[k]; return ""; };
 
@@ -207,8 +276,8 @@ function parseJsonList(src, defaultSource) {
   }
   const list = Array.isArray(data) ? data : [data];
   return list.filter((x) => x && typeof x === "object" && field(x, PICK.text))
-    .map((x) => ({ text: field(x, PICK.text), source: field(x, PICK.source) || defaultSource, by: field(x, PICK.by) }));
+    .map((x) => ({ text: field(x, PICK.text), source: field(x, PICK.source) || defaultSource, by: field(x, PICK.by), ...(field(x, PICK.series) ? { series: field(x, PICK.series) } : {}) }));
 }
 
 /** What to export: your quotes, plain enough to paste back in. */
-export const exportQuotes = (list) => JSON.stringify(list.map(({ text, source, by }) => ({ text, source, by })), null, 2);
+export const exportQuotes = (list) => JSON.stringify(list.map(({ text, source, by, series }) => ({ text, source, by, ...(series ? { series } : {}) })), null, 2);

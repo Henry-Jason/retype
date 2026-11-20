@@ -23,7 +23,7 @@ export function loadCommunity(ls = globalThis.localStorage) {
   } catch { return { at: 0, list: [] }; }
 }
 /** Keep only what typing needs from each approved quote. */
-export const slim = (docs) => docs.map(({ id, text, source, by, name, flags }) => ({ id, text, source: source || "", by: by || "", name: name || "", flags: flags || [] }));
+export const slim = (docs) => docs.map(({ id, text, source, by, series, name, flags }) => ({ id, text, source: source || "", by: by || "", ...(series ? { series } : {}), name: name || "", flags: flags || [] }));
 export function saveCommunity(list, at = Date.now(), ls = globalThis.localStorage) {
   try { ls.setItem(COMMUNITY, JSON.stringify({ at, list })); } catch { /* fine: it's only a cache */ }
 }
