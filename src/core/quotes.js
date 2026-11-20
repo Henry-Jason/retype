@@ -152,7 +152,8 @@ export function updateQuote(list, id, fields) {
 }
 
 /**
- * Read a pasted list. Either JSON (an array of { text, source, by }, as exported), or plain text:
+ * Read a pasted list. Either JSON (objects with text, source and by, as exported; see
+ * parseJsonList for how forgiving that is), or plain text:
  * quotes separated by blank lines, each optionally ending with an attribution line that starts
  * with a dash, like "- Source" or "- Who, Source". A single block of lines with no blank lines
  * and no attributions is read as one quote per line. defaultSource fills in a missing source.
@@ -160,12 +161,7 @@ export function updateQuote(list, id, fields) {
 export function parseImport(text, defaultSource = "") {
   const src = String(text ?? "").trim();
   if (!src) return [];
-  if (src.startsWith("[")) {
-    try {
-      const arr = JSON.parse(src);
-      if (Array.isArray(arr)) return arr.filter((x) => x && typeof x.text === "string").map((x) => ({ text: x.text, source: x.source || defaultSource, by: x.by || "" }));
-    } catch { /* not JSON after all: read it as text */ }
-  }
+  if (src.startsWith("[") || src.startsWith("{")) return parseJsonList(src, defaultSource);
   const attr = /^\s*(?:-{1,2}|–|—|~)\s*(.+)$/;
   const blocks = src.split(/\r?\n\s*\r?\n/);
   const lines = src.split(/\r?\n/).filter((l) => l.trim());
@@ -183,6 +179,35 @@ export function parseImport(text, defaultSource = "") {
     const body = ls.join(" ").trim().replace(/^["“](.*)["”]$/s, "$1");
     return { text: body, source, by };
   }).filter((q) => q.text);
+}
+
+// Field names people tend to use, mapped onto ours.
+const PICK = {
+  text: ["text", "quote", "line", "content", "body"],
+  source: ["source", "from", "film", "movie", "show", "series", "book", "work", "title"],
+  by: ["by", "who", "author", "character", "speaker", "person", "said_by", "saidBy"]
+};
+const field = (o, keys) => { for (const k of keys) if (typeof o[k] === "string" && o[k].trim()) return o[k]; return ""; };
+
+/**
+ * A pasted JSON list, read forgivingly: square brackets optional, trailing commas fine, extra
+ * fields (id, length…) ignored, and common names like "quote" or "author" understood. Throws
+ * with the line to look at when it can't be read, rather than guessing.
+ */
+function parseJsonList(src, defaultSource) {
+  let body = src.replace(/,\s*([\]}])/g, "$1").replace(/,\s*$/, "");
+  if (body.startsWith("{")) body = `[${body}]`;
+  let data;
+  try { data = JSON.parse(body); }
+  catch (e) {
+    // browsers word this differently: Chrome and Node give a position, Firefox a line
+    const at = /position (\d+)/.exec(e.message), ln = /line (\d+)/.exec(e.message);
+    const line = at ? body.slice(0, +at[1]).split("\n").length : ln ? +ln[1] : null;
+    throw new Error(`That looks like a JSON list but couldn't be read${line ? ` (around line ${line})` : ""}. Check for a missing comma, quote mark or bracket.`);
+  }
+  const list = Array.isArray(data) ? data : [data];
+  return list.filter((x) => x && typeof x === "object" && field(x, PICK.text))
+    .map((x) => ({ text: field(x, PICK.text), source: field(x, PICK.source) || defaultSource, by: field(x, PICK.by) }));
 }
 
 /** What to export: your quotes, plain enough to paste back in. */

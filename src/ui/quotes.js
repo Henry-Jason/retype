@@ -49,7 +49,7 @@ export function renderQuotes(view, h) {
       </div>
       <div class="scard">
         <h2>Paste a list</h2>
-        <div class="sub">Several quotes at once, in any of the three layouts below.</div>
+        <div class="sub">Several quotes at once: one per line, blocks with a dash line, or JSON.</div>
         <details class="qhelp"><summary>How to lay out a list</summary>
           <p><b>One per line</b>, all from the same place: put each quote on its own line, no blank lines, and fill in "From, for any without one" below.</p>
           <pre>Every keystroke counts.
@@ -62,7 +62,9 @@ over more than one line.
 The second quote.
 - Somewhere else</pre>
           <p>The attribution splits at the first comma, so a source with a comma in it needs a name first: <code>- Lincoln, Gettysburg Address, 1863</code>.</p>
-          <p><b>An exported file</b>: paste the contents of <code>retype-quotes.json</code> straight in.</p>
+          <p><b>JSON</b>: a list of objects with <code>text</code>, <code>source</code> and (optionally) <code>by</code>, like an exported <code>retype-quotes.json</code>. The square brackets around the list are optional, a trailing comma is fine, and other fields are ignored.</p>
+          <pre>{ "text": "The first quote.", "source": "Somewhere" },
+{ "text": "The second quote.", "source": "Somewhere else", "by": "Someone" }</pre>
           <p>Curly quotes, long dashes and accents become plain keyboard characters, quotation marks around a whole quote are dropped, and duplicates are skipped. Shared quotes need at least four words and a source.</p>
         </details>
         <textarea id="qBulk" class="chin qarea" rows="5" placeholder="First quote&#10;- Someone, Somewhere&#10;&#10;Second quote&#10;- Somewhere else"></textarea>
@@ -322,7 +324,9 @@ The second quote.
 
   /* ---------- paste and export ---------- */
   $("#qImport").onclick = async () => {
-    const parsed = parseImport($("#qBulk").value, $("#qBulkSource").value.trim());
+    let parsed;
+    try { parsed = parseImport($("#qBulk").value, $("#qBulkSource").value.trim()); }
+    catch (e) { return msg($("#qBulkMsg"), e.message, true); }
     if (!parsed.length) return msg($("#qBulkMsg"), "Paste some quotes first.", true);
     const before = h.mine().length;
     const r = addQuotes(h.mine(), parsed);

@@ -121,6 +121,23 @@ Third quote with no attribution`, "Default");
   it("reads one quote per line when there's nothing else to go on", () => {
     expect(parseImport("one two\nthree four\n", "Show").map((q) => q.text)).toEqual(["one two", "three four"]);
   });
+  it("reads JSON without brackets, with trailing commas and extra fields", () => {
+    const pasted = `{
+      "text": "If you have to ask, you will never know.",
+      "source": "Some Book",
+      "id": 8,
+      "length": 72
+    },
+    { "quote": "Second one here", "film": "Some Film", "character": "Someone", },`;
+    expect(parseImport(pasted, "Default")).toEqual([
+      { text: "If you have to ask, you will never know.", source: "Some Book", by: "" },
+      { text: "Second one here", source: "Some Film", by: "Someone" }
+    ]);
+    expect(parseImport(`[{ "text": "only text here" }]`, "Default")).toEqual([{ text: "only text here", source: "Default", by: "" }]);
+  });
+  it("says where broken JSON goes wrong instead of reading it line by line", () => {
+    expect(() => parseImport(`[\n{ "text": "one two" }\n{ "text": "three four" }\n]`)).toThrow(/line 3/);
+  });
   it("round-trips the export", () => {
     const { list } = addQuotes([], [{ text: "a quote to keep", source: "S", by: "B" }]);
     expect(parseImport(exportQuotes(list))).toEqual([{ text: "a quote to keep", source: "S", by: "B" }]);
