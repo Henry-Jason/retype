@@ -1,5 +1,4 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import { execFileSync } from "node:child_process";
 import { mulberry32 } from "../src/core/rng.js";
 import { genWords } from "../src/core/words.js";
 import { packKeys } from "../src/core/result.js";
@@ -9,7 +8,6 @@ import { ppFor, totalPp } from "../src/core/pp.js";
 // The PP Cloud Function's decisions, tested against the shared code it ships with.
 let ppPlay, nextEntry;
 beforeAll(async () => {
-  execFileSync("node", ["scripts/sync-functions.mjs"]);
   ({ ppPlay, nextEntry } = await import("../functions/pp.js"));
 });
 
