@@ -57,7 +57,20 @@ export const LIBRARY = RAW.map(([text, by, source, cat]) => ({ id: quoteId(text)
  * admin approved), and yours (kept in this browser). Functions take { mine, community }, or just
  * your list. Each quote says where it's from: origin "library" | "community" | "mine".
  */
-const pools = (p) => (Array.isArray(p) ? { mine: p, community: [] } : { mine: p?.mine || [], community: p?.community || [] });
+const pools = (p) => (Array.isArray(p) ? { mine: p, community: [], favs: new Set() } : { mine: p?.mine || [], community: p?.community || [], favs: p?.favs || new Set() });
+
+/**
+ * Favourites are kept by the quote's words, not its copy: favouriting one of your own quotes still
+ * counts once it's shared (and it survives a punctuation fix). pools.favs is a Set of these keys.
+ */
+export const favKey = (q) => sharedId(q.text);
+export const isFav = (p, q) => pools(p).favs.has(favKey(q));
+/** Add or remove a favourite; returns the new list of keys (an array, for saving). */
+export function toggleFav(keys, q) {
+  const k = favKey(q), set = new Set(keys);
+  set.has(k) ? set.delete(k) : set.add(k);
+  return [...set];
+}
 export function allQuotes(p) {
   const { mine, community } = pools(p);
   return [
@@ -152,8 +165,8 @@ export const sourceValues = (tree) => tree.flatMap((x) => [x.value, ...(x.source
  * search, clean: leave out quotes flagged for strong language }. With from "all", a quote of yours
  * that's also been shared (or is in the library) only counts once.
  */
-export function filterQuotes(p, { from = "all", len = "any", source = null, search = "", clean: tidy = false } = {}) {
-  const s = search.trim().toLowerCase();
+export function filterQuotes(p, { from = "all", len = "any", source = null, search = "", clean: tidy = false, favs = false } = {}) {
+  const s = search.trim().toLowerCase(), fav = pools(p).favs;
   const seen = new Set();
   return allQuotes(p).filter((q) => {
     if (from !== "all" && from !== q.origin) return false;
@@ -161,6 +174,7 @@ export function filterQuotes(p, { from = "all", len = "any", source = null, sear
     return (len === "any" || lengthOf(q.text) === len) &&
       (!source || (source.startsWith(SERIES_PREFIX) ? seriesOf(q) === source.slice(SERIES_PREFIX.length) : sourceOf(q) === source)) &&
       (!tidy || !(q.flags || []).includes("language")) &&
+      (!favs || fav.has(favKey(q))) &&
       (!s || `${q.text} ${q.by || ""} ${q.source || ""} ${q.name || ""}`.toLowerCase().includes(s));
   });
 }
@@ -171,7 +185,8 @@ export function filterQuotes(p, { from = "all", len = "any", source = null, sear
  * Returns { quote, widened } where widened says the filters had to be relaxed.
  */
 export function pickQuote(p, opts, rand, lastId = null) {
-  const tries = [opts, { ...opts, len: "any" }, { ...opts, len: "any", source: null }, { from: "all", clean: opts.clean }];
+  // favourites are dropped last: someone who asked for favourites gets any favourite before anything else
+  const tries = [opts, { ...opts, len: "any" }, { ...opts, len: "any", source: null }, { ...opts, len: "any", source: null, from: "all" }, { from: "all", clean: opts.clean }];
   for (let i = 0; i < tries.length; i++) {
     const pool = filterQuotes(p, tries[i]);
     if (!pool.length) continue;

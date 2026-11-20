@@ -6,7 +6,7 @@ export const DEFAULTS = {
   list: "200", punct: false, nums: false,
   focus: false, live: true, margin: true, roll: true, sound: "off", errSound: false,
   indent: "auto",
-  quoteFrom: "all", quoteLen: "any", quoteSource: null, quoteClean: false
+  quoteFrom: "all", quoteLen: "any", quoteSource: null, quoteClean: false, quoteFavs: false
 };
 
 export const PRESETS = { words: [25, 50, 100], time: [15, 30, 60, 120] };
@@ -44,6 +44,7 @@ export const SETTINGS = [
   { key: "sound", label: "Key sound", options: [["off", "Off"], ["click", "Click"], ["type", "Typewriter"]] },
   { key: "errSound", label: "Error sound", options: [[false, "Off"], [true, "On"]] },
   { section: "Quotes" },
+  { key: "quoteFavs", label: "Which quotes", help: "Only the quotes you've hearted, or all of them. Heart a quote while typing it, on the results, or on the Quotes page.", options: [[false, "All"], [true, "Favourites"]], quote: true },
   { key: "quoteLen", label: "Quote length", help: "Short is up to 20 words, medium 21 to 45, long anything over.", options: [["any", "Any"], ["short", "Short"], ["medium", "Medium"], ["long", "Long"]], quote: true },
   { key: "quoteFrom", label: "Quotes from", help: "The built-in library, quotes other players shared, the ones you've added, or all of them. Add and share your own on the Quotes page.", options: [["all", "Everything"], ["library", "Library"], ["community", "Everyone's"], ["mine", "Yours"]], quote: true },
   { key: "quoteClean", label: "Strong language in quotes", help: "Shared quotes with swearing are marked when they're reviewed. Hide them if you'd rather not type them.", options: [[false, "Allow"], [true, "Hide"]], quote: true },

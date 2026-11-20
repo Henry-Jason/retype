@@ -441,3 +441,11 @@ details summary{cursor:pointer;color:var(--ink)}
 .qhelp pre{margin:4px 0 8px;padding:8px 10px;background:var(--chip);border-radius:6px;font:12.5px/1.45 "Courier Prime",monospace;color:var(--ink);white-space:pre-wrap}
 .qtrio{display:grid;grid-template-columns:2fr 1.5fr 1.5fr;gap:10px}
 @media (max-width:600px){.qtrio{grid-template-columns:1fr}}
+.heart{display:inline-flex;gap:5px;align-items:center;background:none;border:1px solid var(--desk-line);border-radius:6px;padding:4px 9px;font:600 12px var(--ui);color:var(--desk-muted);cursor:pointer}
+.heart:hover{color:var(--pencil)}
+.heart.on{color:var(--pencil);border-color:var(--pencil)}
+.heart.icon{padding:5px 7px;align-self:center}
+.tag .heart{padding:2px 8px;font-size:12px}
+.qpanelacts{display:flex;gap:8px;align-items:center;margin-top:10px}
+.favbtn{display:inline-flex;gap:4px;align-items:center}
+.favbtn svg{width:12px;height:12px}

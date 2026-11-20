@@ -21,8 +21,8 @@ import { levelFrom } from "../core/levels.js";
 import { cleanName } from "../core/sync.js";
 import { $, esc, pad, stampDate, uuid } from "./util.js";
 import { pickQuote, words as quoteWords, LENGTHS as QUOTE_LENGTHS, addQuotes } from "../core/quotes.js";
-import { loadQuotes, saveQuotes, loadCommunity, saveCommunity, slim, STALE } from "../storage/quote-store.js";
-import { REPORT_REASONS } from "../core/quotes.js";
+import { loadQuotes, saveQuotes, loadCommunity, saveCommunity, slim, STALE, loadFavs, saveFavs } from "../storage/quote-store.js";
+import { REPORT_REASONS, toggleFav, isFav } from "../core/quotes.js";
 import { renderQuotes } from "./quotes.js";
 
 export function startApp({ cfg, store, progress, accountsEnabled = false, cloudReady = Promise.resolve(null) }) {
@@ -39,8 +39,17 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
   let notice = "";
   let myQuotes = loadQuotes();
   // everyone's quotes (cached), what you've sent in, and whether you review them
-  let community = loadCommunity(), shared = new Map(), admin = false, queueCount = 0;
-  const pools = () => ({ mine: myQuotes, community: community.list });
+  let community = loadCommunity(), shared = new Map(), admin = false, queueCount = 0, favs = loadFavs();
+  const pools = () => ({ mine: myQuotes, community: community.list, favs: new Set(favs) });
+  const HEART = (on) => `<svg viewBox="0 0 24 24" width="14" height="14" fill="${on ? "currentColor" : "none"}" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7.5-4.6-9.6-9.2C.9 8.4 3 4.5 6.8 4.5c2.1 0 3.6 1.1 5.2 3 1.6-1.9 3.1-3 5.2-3 3.8 0 5.9 3.9 4.4 7.3C19.5 16.4 12 21 12 21z"/></svg>`;
+  /** Heart or un-heart a quote; returns whether it's now a favourite. */
+  function favourite(q) {
+    favs = toggleFav(favs, q); saveFavs(favs);
+    const on = isFav(pools(), q);
+    toast(on ? "Added to your favourites." : "Removed from your favourites.");
+    return on;
+  }
+  const heartBtn = (q, id) => { const on = isFav(pools(), q); return `<button type="button" class="heart${on ? " on" : ""}" id="${id}" aria-pressed="${on}" title="${on ? "Remove from favourites" : "Add to favourites"}">${HEART(on)}${on ? "Favourited" : "Favourite"}</button>`; };
   async function refreshQuotes() {
     const c = cloud || (await cloudReady);
     if (!c?.approvedQuotes) return;
@@ -57,8 +66,8 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
   const ICON_QUOTE = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11h5v6H4v-6c0-3 1.5-5 4-6M14 11h5v6h-5v-6c0-3 1.5-5 4-6"/></svg>`;
   // a random quote from whatever the quote settings allow, never the one just typed
   function quoteSource(lastId = null) {
-    const { quote, widened } = pickQuote(pools(), { from: cfg.quoteFrom, len: cfg.quoteLen, source: cfg.quoteSource, clean: cfg.quoteClean }, mulberry32(randomSeed()), lastId);
-    if (widened) notice = "Nothing matched your quote settings, so here's one from further afield";
+    const { quote, widened } = pickQuote(pools(), { from: cfg.quoteFrom, len: cfg.quoteLen, source: cfg.quoteSource, clean: cfg.quoteClean, favs: cfg.quoteFavs }, mulberry32(randomSeed()), lastId);
+    if (widened) notice = cfg.quoteFavs && !favs.length ? "No favourites yet: heart a quote to add it" : "Nothing matched your quote settings, so here's one from further afield";
     return { kind: "quote", quote };
   }
   const dayLabel = (day) => { const [y, m, d] = day.split("-").map(Number); return new Date(y, m - 1, d).toLocaleDateString(undefined, { day: "numeric", month: "short" }); };
@@ -165,6 +174,9 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
         if (QUOTE_LENGTHS[k].max || QUOTE_LENGTHS[k].min) b.title = QUOTE_LENGTHS[k].label + (QUOTE_LENGTHS[k].max && !QUOTE_LENGTHS[k].min ? `: up to ${QUOTE_LENGTHS[k].max} words` : QUOTE_LENGTHS[k].min && !QUOTE_LENGTHS[k].max ? `: ${QUOTE_LENGTHS[k].min}+ words` : `: ${QUOTE_LENGTHS[k].min} to ${QUOTE_LENGTHS[k].max} words`);
         q.appendChild(b);
       }
+      const f = btn("", !!cfg.quoteFavs, () => { cfg.quoteFavs = !cfg.quoteFavs; saveSettings(cfg); newTest(quoteSource(test.quote.id)); });
+      f.innerHTML = `${HEART(!!cfg.quoteFavs)} favourites`; f.className = "favbtn"; f.title = "Only quotes you've hearted";
+      q.appendChild(f);
       box.appendChild(q);
     }
     renderNavs();
@@ -404,7 +416,9 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       const vs = f ? ` · ${f.name ? esc(f.name) + "'s" : "their"} score ${score(f.wpm, f.acc).toFixed(1)} (${Math.round(f.wpm)} wpm, ${f.acc.toFixed(1)}%)` : "";
       const lead = f ? `Challenge${f.name ? " from " + esc(f.name) : ""} · quote` : notice ? esc(notice) + " · quote" : "Quote";
       notice = "";
-      tag.innerHTML = `<span>${lead}${from ? ` · ${from}` : ""} · ${test.targets.length} words${vs}</span><button type="button" id="quotesTag">Quotes</button><button type="button" id="exitTag">Back to words</button>`;
+      tag.innerHTML = `<span>${lead}${from ? ` · ${from}` : ""} · ${test.targets.length} words${vs}</span>${heartBtn(q, "favTag")}<button type="button" id="quotesTag">Quotes</button><button type="button" id="exitTag">Back to words</button>`;
+      $("#favTag").onmousedown = (e) => e.preventDefault(); // keep typing focus
+      $("#favTag").onclick = () => { favourite(q); updateTag(); focusInput(); };
       $("#quotesTag").onclick = () => { location.hash = "quotes"; };
       $("#exitTag").onclick = () => newTest({ kind: "normal" });
       return;
@@ -858,6 +872,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     const q = test.quote;
     const canReport = q && q.community && !shared.has(q.id);
     const quotePanel = q ? `<div class="panel"><h2>The quote</h2><p class="quoteblock">${esc(q.text)}</p>${q.by || q.source ? `<div class="quoteby">- ${esc([q.by, q.source].filter(Boolean).join(", "))}${q.community && q.name ? ` · added by ${esc(q.name)}` : ""}</div>` : ""}
+      <div class="qpanelacts">${heartBtn(q, "favRes")}</div>
       ${canReport ? `<div class="qreport" id="qrep"><button type="button" class="linkbtn" id="qrepOpen">Report this quote</button></div>` : ""}</div>` : "";
     const keepable = q && q.shared && !myQuotes.some((x) => x.text.toLowerCase() === q.text.toLowerCase());
     const nextCard = q
@@ -894,6 +909,13 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     $("#btnDrill").onclick = () => { if (drill) newTest({ kind: "practice", words: drill.words, label: `Pair drill · ${drill.pairs.join(" ")}` }); };
     $("#btnNext").onclick = nextFromResults;
     $("#btnAgain")?.addEventListener("click", restart);
+    if (q) {
+      const wireHeart = () => $("#favRes").addEventListener("click", () => {
+        favourite(q);
+        $("#favRes").outerHTML = heartBtn(q, "favRes"); wireHeart();
+      });
+      wireHeart();
+    }
     $("#qrepOpen")?.addEventListener("click", () => {
       const box = $("#qrep");
       if (!user) { box.innerHTML = `<span class="sub">Sign in to report a quote.</span><button type="button" class="go" id="qrepIn">Sign in</button>`; $("#qrepIn").onclick = signIn; return; }
@@ -1039,6 +1061,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       input.blur();
       renderQuotes(statsView, {
         mine: () => myQuotes, community: () => community.list, shared: () => shared, admin: () => admin, signedIn: () => !!user, cfg,
+        favs: () => new Set(favs), onFav: (q) => { favs = toggleFav(favs, q); saveFavs(favs); return isFav(pools(), q); },
         onSignIn: signIn,
         share: async (list) => { const r = (await cloud.submitQuotes(list)).results; refreshQueueCount(); return r; },
         withdraw: (id) => cloud.withdrawQuote(id),
