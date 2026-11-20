@@ -2,6 +2,7 @@
 // seed and settings, so a link (or today's date) is enough for two people to type the same words.
 import { LISTS } from "./words.js";
 import { SNIPPETS } from "./code.js";
+import { LIBRARY, makeQuote } from "./quotes.js";
 
 const LIMITS = { w: [1, 1000], t: [5, 600] };
 
@@ -11,12 +12,17 @@ const b64url = (s) => btoa(unescape(encodeURIComponent(s))).replace(/\+/g, "-").
 const unb64url = (s) => decodeURIComponent(escape(atob(s.replace(/-/g, "+").replace(/_/g, "/"))));
 
 /**
- * c: { seed, mode: "words"|"time"|"code", length, list, punct, nums, sudden, snippet, from: { name, wpm, acc } }
+ * c: { seed, mode: "words"|"time"|"code"|"quote", length, list, punct, nums, sudden, snippet, quote, from: { name, wpm, acc } }
+ * A library quote travels by id; one of your own carries its text, so a friend can type it too.
  * Packed with short keys so links stay short.
  */
 export function encodeChallenge(c) {
-  const o = { v: 1, m: c.mode === "words" ? "w" : c.mode === "time" ? "t" : "c" };
+  const o = { v: 1, m: c.mode === "words" ? "w" : c.mode === "time" ? "t" : c.mode === "quote" ? "q" : "c" };
   if (o.m === "c") o.x = c.snippet;
+  else if (o.m === "q") {
+    if (LIBRARY.some((q) => q.id === c.quote.id)) o.x = c.quote.id;
+    else Object.assign(o, { q: c.quote.text, o: c.quote.source || "", b: c.quote.by || "" });
+  }
   else Object.assign(o, { s: c.seed >>> 0, n: c.length, l: c.list, p: c.punct ? 1 : 0, u: c.nums ? 1 : 0, d: c.sudden ? 1 : 0 });
   if (c.from) {
     const name = (c.from.name || "").trim().slice(0, 20);
@@ -31,12 +37,21 @@ export function encodeChallenge(c) {
 export function decodeChallenge(str) {
   let o;
   try { o = JSON.parse(unb64url(str)); } catch { return null; }
-  if (!o || o.v !== 1 || !["w", "t", "c"].includes(o.m)) return null;
+  if (!o || o.v !== 1 || !["w", "t", "c", "q"].includes(o.m)) return null;
   const from = Number.isFinite(o.w) && Number.isFinite(o.a) && o.w >= 0 && o.w < 1000 && o.a >= 0 && o.a <= 1000
     ? { name: typeof o.f === "string" ? o.f.slice(0, 20) : "", wpm: o.w, acc: o.a / 10 } : null;
   if (o.m === "c") {
     if (!SNIPPETS.some((s) => s.id === o.x)) return null;
     return { mode: "code", snippet: o.x, from };
+  }
+  if (o.m === "q") {
+    if (o.x != null) {
+      const q = LIBRARY.find((x) => x.id === o.x);
+      return q ? { mode: "quote", quote: q, from } : null;
+    }
+    if (typeof o.q !== "string") return null;
+    const r = makeQuote({ text: o.q, source: typeof o.o === "string" ? o.o : "", by: typeof o.b === "string" ? o.b : "" });
+    return r.error ? null : { mode: "quote", quote: { ...r.quote, mine: true, shared: true }, from };
   }
   const [lo, hi] = LIMITS[o.m];
   if (!Number.isInteger(o.n) || o.n < lo || o.n > hi) return null;

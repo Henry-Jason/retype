@@ -5,7 +5,8 @@ export const DEFAULTS = {
   stop: "off", backspace: "on", sudden: false, ratio: 0.4,
   list: "200", punct: false, nums: false,
   focus: false, live: true, margin: true, roll: true, sound: "off", errSound: false,
-  indent: "auto"
+  indent: "auto",
+  quoteFrom: "all", quoteLen: "any", quoteSource: null, quoteClean: false
 };
 
 export const PRESETS = { words: [25, 50, 100], time: [15, 30, 60, 120] };
@@ -42,6 +43,10 @@ export const SETTINGS = [
   { key: "roll", label: "Till roll while typing", help: "The receipt still prints at the end.", options: [[true, "Show"], [false, "Hide"]] },
   { key: "sound", label: "Key sound", options: [["off", "Off"], ["click", "Click"], ["type", "Typewriter"]] },
   { key: "errSound", label: "Error sound", options: [[false, "Off"], [true, "On"]] },
+  { section: "Quotes" },
+  { key: "quoteLen", label: "Quote length", help: "Short is up to 20 words, medium 21 to 45, long anything over.", options: [["any", "Any"], ["short", "Short"], ["medium", "Medium"], ["long", "Long"]], quote: true },
+  { key: "quoteFrom", label: "Quotes from", help: "The built-in library, quotes other players shared, the ones you've added, or all of them. Add and share your own on the Quotes page.", options: [["all", "Everything"], ["library", "Library"], ["community", "Everyone's"], ["mine", "Yours"]], quote: true },
+  { key: "quoteClean", label: "Strong language in quotes", help: "Shared quotes with swearing are marked when they're reviewed. Hide them if you'd rather not type them.", options: [[false, "Allow"], [true, "Hide"]], quote: true },
   { section: "Code" },
   { key: "indent", label: "Indentation", help: "Auto: indentation fills in, and space or Enter at the end of a line moves you to the next one. Manual: type the indentation yourself and press Enter to end each line.", options: [["auto", "Auto"], ["manual", "Manual"]], restart: true }
 ];

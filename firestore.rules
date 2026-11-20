@@ -6,12 +6,18 @@ rules_version = '2';
 //   profiles/{uid}               a display name, public so boards can show it
 //   boards/{board}/entries/{uid} leaderboard entries: anyone can read, only the Cloud Function
 //                                (functions/index.js) writes, after re-checking the galley
+//   quotes/{id}                  shared quotes: anyone can read approved ones, the submitter their
+//                                own, admins everything; only the Cloud Functions write
+//   admins/{uid}                 who reviews shared quotes; made by hand in the console
 // Everything else is closed.
 service cloud.firestore {
   match /databases/{database}/documents {
 
     function isOwner(uid) {
       return request.auth != null && request.auth.uid == uid;
+    }
+    function isAdmin() {
+      return request.auth != null && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
     }
 
     match /users/{uid} {
@@ -38,7 +44,7 @@ service cloud.firestore {
           return d.id == rid
             && d.userId == uid
             && d.at is int
-            && d.kind in ['normal', 'mix', 'practice', 'code', 'daily', 'challenge']
+            && d.kind in ['normal', 'mix', 'practice', 'code', 'daily', 'challenge', 'quote']
             && d.wpm is number && d.wpm >= 0 && d.wpm < 1000
             && d.acc is number && d.acc >= 0 && d.acc <= 100
             && d.keys is string && d.keys.size() < 500000
@@ -64,6 +70,22 @@ service cloud.firestore {
 
     match /boards/{board}/entries/{uid} {
       allow read: if true;
+      allow write: if false;
+    }
+
+    match /quotes/{id} {
+      allow read: if resource.data.status == 'approved'
+        || (request.auth != null && resource.data.uid == request.auth.uid)
+        || isAdmin();
+      allow write: if false;
+      match /reports/{uid} {
+        allow read: if isAdmin();
+        allow write: if false;
+      }
+    }
+
+    match /admins/{uid} {
+      allow read: if isOwner(uid);
       allow write: if false;
     }
 

@@ -394,3 +394,48 @@ details summary{cursor:pointer;color:var(--ink)}
 .placeline a:hover{text-decoration:underline}
 .boardpage .boardhead{margin-bottom:6px}
 .boardpage #boardAbout{margin-bottom:12px;max-width:72ch}
+
+/* ---------- quotes ---------- */
+.qtwo{grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.qtwo>.scard{min-width:0}
+.qarea{resize:vertical;min-height:84px;font:15px/1.45 "Courier Prime",monospace}
+.qpair{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.qpair>div,.qfilters>div{display:flex;flex-direction:column;gap:6px;min-width:0}
+.optl{opacity:.7;font-weight:400}
+.scard .sub.bad{color:var(--pencil)}
+.scard code{font:12px "Courier Prime",monospace;background:var(--chip);padding:1px 4px;border-radius:3px;color:var(--ink)}
+.qfilters{display:flex;flex-wrap:wrap;gap:16px 24px;align-items:flex-end}
+.qfilters select.chin{width:auto;min-width:220px;max-width:100%}
+.qsearch{width:240px;max-width:100%}
+.qrow{display:flex;gap:16px;align-items:flex-start;padding:12px 0;border-top:1px solid var(--hairline)}
+.qbody{flex:1;min-width:0}
+.qtext{font:15px/1.5 "Courier Prime",monospace;color:var(--ink);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.qmeta{font-size:12px;color:var(--ink-muted);margin-top:4px}
+.qact{display:flex;gap:6px;flex-shrink:0}
+.qact .go{padding:5px 10px;font-size:13px}
+.qempty{padding:8px 0}
+.quoteblock{margin:0;font:18px/1.55 "Courier Prime",monospace;color:var(--ink)}
+.quoteby{margin-top:8px;font-size:13px;color:var(--ink-muted)}
+.rtext.attr{font-style:italic}
+@media (max-width:760px){.qtwo{grid-template-columns:1fr}}
+@media (max-width:600px){.qpair{grid-template-columns:1fr}.qrow{flex-direction:column}}
+.linkbtn{background:none;border:0;padding:0;color:var(--pencil);font:600 13px var(--ui);cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.navbtn .badge{font-style:normal;font:700 11px var(--ui);background:var(--pencil);color:var(--on-pencil);border-radius:9px;padding:1px 6px;margin-left:2px}
+.qshare{display:flex;flex-direction:column;gap:2px}
+.qcheck{display:flex;gap:8px;align-items:center;font:600 14px var(--ui);color:var(--ink);cursor:pointer}
+.qcheck input{width:16px;height:16px;accent-color:var(--pencil)}
+.qchip{font:600 11px var(--ui);padding:3px 8px;border-radius:10px;background:var(--chip);color:var(--ink-muted);white-space:nowrap;align-self:center;max-width:220px;overflow:hidden;text-overflow:ellipsis}
+.qchip.ok{color:#2f7d4f;background:rgba(47,125,79,.12)}
+.qchip.wait{color:#9a6a00;background:rgba(200,150,0,.14)}
+.qchip.no{color:var(--pencil);background:rgba(200,40,40,.1)}
+.qreport{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px}
+.qreport .go{padding:4px 9px;font-size:12px}
+.qrev{display:flex;flex-direction:column;gap:8px;padding:14px 0;border-top:1px solid var(--hairline);transition:opacity .4s}
+.qrev.gone{opacity:.35}
+.qrevhead{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.qrev .qarea{min-height:56px}
+.qreject{width:auto}
+.qhelp{font-size:13px;color:var(--ink-muted);line-height:1.5}
+.qhelp summary{cursor:pointer;font-weight:600;color:var(--pencil)}
+.qhelp p{margin:8px 0}
+.qhelp pre{margin:4px 0 8px;padding:8px 10px;background:var(--chip);border-radius:6px;font:12.5px/1.45 "Courier Prime",monospace;color:var(--ink);white-space:pre-wrap}

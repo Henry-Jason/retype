@@ -20,6 +20,10 @@ import { renderBoards, ordinal } from "./boards.js";
 import { levelFrom } from "../core/levels.js";
 import { cleanName } from "../core/sync.js";
 import { $, esc, pad, stampDate, uuid } from "./util.js";
+import { pickQuote, words as quoteWords, LENGTHS as QUOTE_LENGTHS, addQuotes } from "../core/quotes.js";
+import { loadQuotes, saveQuotes, loadCommunity, saveCommunity, slim, STALE } from "../storage/quote-store.js";
+import { REPORT_REASONS } from "../core/quotes.js";
+import { renderQuotes } from "./quotes.js";
 
 export function startApp({ cfg, store, progress, accountsEnabled = false, cloudReady = Promise.resolve(null) }) {
   const stage = $("#stage"), track = $("#track"), tape = $(".tape"), pencil = $("#pencil"), input = $("#hidden"), tag = $("#tag");
@@ -33,6 +37,30 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
   let test, wordEls, cache, center, rows, ticker, idleTimer, editing = null, drawerOpen = false, lastChart = null;
   const galleyNo = () => pad(state.totals.galleys + 1, 4);
   let notice = "";
+  let myQuotes = loadQuotes();
+  // everyone's quotes (cached), what you've sent in, and whether you review them
+  let community = loadCommunity(), shared = new Map(), admin = false, queueCount = 0;
+  const pools = () => ({ mine: myQuotes, community: community.list });
+  async function refreshQuotes() {
+    const c = cloud || (await cloudReady);
+    if (!c?.approvedQuotes) return;
+    const [live, mineSent] = await Promise.all([c.approvedQuotes(), user ? c.myShared(user.uid) : null]);
+    community = { at: Date.now(), list: slim(live) };
+    saveCommunity(community.list, community.at);
+    if (mineSent) shared = new Map(mineSent.map((d) => [d.id, d]));
+  }
+  async function refreshQueueCount() {
+    if (!admin || !cloud?.quoteQueue) { queueCount = 0; return renderNavs(); }
+    try { queueCount = (await cloud.quoteQueue()).length; } catch { queueCount = 0; }
+    renderNavs();
+  }
+  const ICON_QUOTE = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11h5v6H4v-6c0-3 1.5-5 4-6M14 11h5v6h-5v-6c0-3 1.5-5 4-6"/></svg>`;
+  // a random quote from whatever the quote settings allow, never the one just typed
+  function quoteSource(lastId = null) {
+    const { quote, widened } = pickQuote(pools(), { from: cfg.quoteFrom, len: cfg.quoteLen, source: cfg.quoteSource, clean: cfg.quoteClean }, mulberry32(randomSeed()), lastId);
+    if (widened) notice = "Nothing matched your quote settings, so here's one from further afield";
+    return { kind: "quote", quote };
+  }
   const dayLabel = (day) => { const [y, m, d] = day.split("-").map(Number); return new Date(y, m - 1, d).toLocaleDateString(undefined, { day: "numeric", month: "short" }); };
   const o2label = (o) => [o.mode === "time" ? `${o.length} seconds` : `${o.length} words`, (LISTS[o.list]?.label || o.list).toLowerCase(), o.punct ? "punctuation" : "", o.nums ? "numbers" : "", o.sudden ? "sudden death" : ""].filter(Boolean).join(" · ");
 
@@ -127,7 +155,18 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     more.appendChild(btn("flow", plain && cfg.mode === "flow", () => { cfg.mode = "flow"; saveSettings(cfg); newTest({ kind: "normal" }); }));
     more.appendChild(btn("python", !!(test && test.code), () => newTest({ kind: "code", idx: test && test.code ? test.source.idx : 0 })));
     more.appendChild(btn("daily", !!(test && test.source.kind === "daily"), () => newTest(dailySource())));
+    more.appendChild(btn("quote", !!(test && test.quote), () => newTest(quoteSource(test?.quote?.id))));
     box.appendChild(more);
+    if (test && test.quote) {
+      const q = document.createElement("div"); q.className = "grp";
+      q.innerHTML = `<span class="lbl">quote</span>`;
+      for (const [k, label] of [["any", "any"], ["short", "short"], ["medium", "medium"], ["long", "long"]]) {
+        const b = btn(label, cfg.quoteLen === k, () => { cfg.quoteLen = k; saveSettings(cfg); newTest(quoteSource(test.quote.id)); });
+        if (QUOTE_LENGTHS[k].max || QUOTE_LENGTHS[k].min) b.title = QUOTE_LENGTHS[k].label + (QUOTE_LENGTHS[k].max && !QUOTE_LENGTHS[k].min ? `: up to ${QUOTE_LENGTHS[k].max} words` : QUOTE_LENGTHS[k].min && !QUOTE_LENGTHS[k].max ? `: ${QUOTE_LENGTHS[k].min}+ words` : `: ${QUOTE_LENGTHS[k].min} to ${QUOTE_LENGTHS[k].max} words`);
+        q.appendChild(b);
+      }
+      box.appendChild(q);
+    }
     renderNavs();
   }
   function renderNavs() {
@@ -143,6 +182,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
         nav("navbtn", "Sign in", signIn, "signIn", "Sign in with Google to keep your progress on every device");
       }
     }
+    nav("navbtn" + (location.hash === "#quotes" ? " on" : ""), `${ICON_QUOTE}Quotes${queueCount ? ` <i class="badge" title="${queueCount} to review">${queueCount}</i>` : ""}`, () => { location.hash = "quotes"; }, "openQuotes");
     nav("navbtn" + (location.hash === "#boards" ? " on" : ""), `${ICON_PODIUM}Boards`, () => { location.hash = "boards"; }, "openBoards");
     nav("navbtn" + (location.hash === "#stats" ? " on" : ""), `${ICON_CHART}Stats`, () => { location.hash = "stats"; }, "openStats");
     nav("navbtn", `${ICON_GEAR}Settings`, openSettings, "openSettings");
@@ -215,7 +255,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
   async function signOut() {
     if (!cloud) return;
     await cloud.signOut();
-    user = null; sync = "idle";
+    user = null; sync = "idle"; admin = false; shared = new Map(); queueCount = 0;
     await forgetAccount(store);
     state = await loadProgress(store);
     toast("Signed out. Your progress is safe in your account; this browser starts fresh.");
@@ -226,6 +266,8 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
   cloudReady.then((c) => {
     cloud = c;
     if (!c) return;
+    // a guest gets everyone's quotes too; only refetched when the cached copy is stale
+    if (Date.now() - community.at > STALE) refreshQuotes().catch((e) => console.warn("Couldn't load shared quotes", e));
     c.onUser(async (u) => {
       if (u && (!user || user.uid !== u.uid)) {
         const first = !(await store.get("account"));
@@ -233,9 +275,11 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
         await runSync();
         try { boardName = await ensureProfile({ cloud: c, user: u }); } catch (e) { console.warn("Couldn't set up the board name", e); }
         ensurePpBoard({ cloud: c, uid: u.uid, state }).catch((e) => console.warn("Couldn't score older galleys for the PP board", e));
+        if (c.isAdmin) { admin = await c.isAdmin(u.uid); refreshQueueCount(); }
+        refreshQuotes().then(() => { if (location.hash === "#quotes") route(); }).catch((e) => console.warn("Couldn't load shared quotes", e));
         if (first && sync === "synced") toast(`Signed in as ${u.name || u.email}. Your galleys are now saved to your account.`);
       } else if (!u && user) {
-        user = null; sync = "idle"; updateStanding();
+        user = null; sync = "idle"; admin = false; shared = new Map(); queueCount = 0; updateStanding();
       }
     });
   });
@@ -259,16 +303,19 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       html += `<div class="opt"><div class="t">${s.label}</div>${s.help ? `<div class="h">${s.help}</div>` : ""}<div class="seg" role="group" aria-label="${s.label}">` +
         s.options.map(([v, l]) => `<button type="button" data-k="${s.key}" data-v='${JSON.stringify(v)}' aria-pressed="${String(cfg[s.key]) === String(v)}">${l}</button>`).join("") + `</div></div>`;
     }
+    html = html.replace(`<div class="dsec">Code</div>`, `<div class="dact"><button type="button" id="manageQuotes">Your quotes</button></div><div class="dsec">Code</div>`);
     html += `<div class="dsec">Keys</div><div class="keys"><kbd>tab</kbd><span>New galley (also from the results)</span><kbd>esc</kbd><span>Restart the same galley, finish a flow session, or close this panel</span><kbd>enter</kbd><span>Practise weak words, from the results</span><kbd>ctrl</kbd><span>with backspace, delete the whole word</span></div>`;
     html += `<div class="dsec">Data</div><div class="h" style="font-size:13px;color:var(--desk-muted)">Settings are saved in this browser only. Your progress can be cleared from the Stats page.</div><div class="dact"><button type="button" id="resetSettings">Reset all settings</button></div>`;
     body.innerHTML = html;
     body.querySelectorAll(".seg button").forEach((b) => b.onclick = () => {
       const s = SETTINGS.find((x) => x.key === b.dataset.k);
       cfg[s.key] = JSON.parse(b.dataset.v); saveSettings(cfg); applyDisplay();
+      if (s.quote) { if (test && test.quote && !test.ended) newTest(quoteSource(test.quote.id)); renderSettings(); return; }
       if (s.restart && test && !test.ended && !test.code) restart();
       else if (s.restart && test && !test.ended && test.code && (s.key === "indent" || s.key === "size" || s.key === "font")) restart();
       renderSettings();
     });
+    $("#manageQuotes").onclick = () => { closeSettings(); location.hash = "quotes"; };
     $("#resetSettings").onclick = () => {
       Object.keys(cfg).forEach((k) => delete cfg[k]); Object.assign(cfg, DEFAULTS); saveSettings(cfg); applyDisplay();
       if (test && !test.ended) restart();
@@ -282,10 +329,10 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     clearInterval(ticker); clearTimeout(idleTimer);
     document.body.classList.remove("ended", "typing-now");
     doneBand.hidden = true;
-    const code = source.kind === "code", practice = source.kind === "practice";
+    const code = source.kind === "code", practice = source.kind === "practice", quoteMode = source.kind === "quote";
     const o = source.opts || { mode: cfg.mode, length: cfg.mode === "time" ? cfg.time : cfg.words, list: cfg.list, punct: cfg.punct, nums: cfg.nums, sudden: cfg.sudden };
-    const flow = !code && !practice && o.mode === "flow";
-    const infinite = !code && !practice && (o.mode === "time" || flow);
+    const flow = !code && !practice && !quoteMode && o.mode === "flow";
+    const infinite = !code && !practice && !quoteMode && (o.mode === "time" || flow);
     const seed = source.seed ?? randomSeed(), rand = mulberry32(seed);
     const genOpts = { rand, list: o.list, weak: source.weak || null, ratio: source.ratio || 0, punct: o.punct, nums: o.nums };
     let targets, lineNo = null, snippet = null, lines = null;
@@ -295,11 +342,12 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       const typable = lines.filter((l) => !l.blank);
       targets = typable.map((l) => l.target); lineNo = typable.map((l) => l.n);
     } else if (practice) targets = source.words.slice();
+    else if (quoteMode) targets = quoteWords(source.quote.text);
     else targets = genWords(infinite ? 80 : o.length, genOpts);
     test = {
       source: { ...source, seed }, seed, rand, genOpts, targets, typed: targets.map(() => ""), werr: targets.map(() => 0),
       cur: 0, first: 0, committed: 0, infinite, flow, limit: o.mode === "time" && infinite ? o.length : null, opts: o,
-      sudden: !!o.sudden && !code && !practice && !flow, died: false,
+      sudden: !!o.sudden && !code && !practice && !flow && !quoteMode, died: false, quote: quoteMode ? source.quote : null,
       startT: null, pausedTotal: 0, pauseStart: null, lastT: null, gap: false, keys: [], ended: false,
       total: 0, okKeys: 0, streak: 0, best: 0, corrections: [],
       code, snippet, lines, lineNo, tok: null, layout: code ? "page" : cfg.layout
@@ -328,6 +376,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
   function fresh() {
     const s = test.source;
     if (s.kind === "code") newTest({ kind: "code", idx: (s.idx + 1) % SNIPPETS.length });
+    else if (s.kind === "quote") newTest(quoteSource(s.quote.id));
     else if (s.kind === "challenge" || s.kind === "daily") newTest({ kind: "normal" });
     else if (s.kind === "practice") newTest({ ...s, seed: undefined, words: shuffleSpread(s.words, mulberry32(randomSeed())) });
     else newTest({ ...s, seed: undefined });
@@ -345,6 +394,18 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
         : s.kind === "code" ? `Challenge${f && f.name ? " from " + esc(f.name) : ""} · Python · ${esc(test.snippet.title)}${vs}`
         : `Challenge${f && f.name ? " from " + esc(f.name) : ""} · ${o2label(test.opts)}${vs}`;
       tag.innerHTML = `<span>${what}${extra.length ? " · " + extra.join(" · ") : ""}</span><button type="button" id="exitTag">Leave</button>`;
+      $("#exitTag").onclick = () => newTest({ kind: "normal" });
+      return;
+    }
+    if (s.kind === "quote") {
+      tag.hidden = false;
+      const q = test.quote, f = s.from;
+      const from = [q.by, q.source].filter(Boolean).map(esc).join(", ") + (q.community && q.name ? ` · added by ${esc(q.name)}` : "");
+      const vs = f ? ` · ${f.name ? esc(f.name) + "'s" : "their"} score ${score(f.wpm, f.acc).toFixed(1)} (${Math.round(f.wpm)} wpm, ${f.acc.toFixed(1)}%)` : "";
+      const lead = f ? `Challenge${f.name ? " from " + esc(f.name) : ""} · quote` : notice ? esc(notice) + " · quote" : "Quote";
+      notice = "";
+      tag.innerHTML = `<span>${lead}${from ? ` · ${from}` : ""} · ${test.targets.length} words${vs}</span><button type="button" id="quotesTag">Quotes</button><button type="button" id="exitTag">Back to words</button>`;
+      $("#quotesTag").onclick = () => { location.hash = "quotes"; };
       $("#exitTag").onclick = () => newTest({ kind: "normal" });
       return;
     }
@@ -479,7 +540,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
   /* ---------- keyboard ---------- */
   input.addEventListener("keydown", (e) => {
     if (e.key === "Tab") { e.preventDefault(); test.ended ? nextFromResults() : fresh(); return; }
-    if (test.ended) { if (e.key === "Enter") { e.preventDefault(); $("#btnPractice")?.click(); } return; }
+    if (test.ended) { if (e.key === "Enter") { e.preventDefault(); $("#btnPractice")?.click(); } else if (e.key === "Escape" && test.quote) { e.preventDefault(); restart(); } return; }
     if (e.key === "Escape") { e.preventDefault(); if (test.flow) { if (test.committed) finish(); } else restart(); return; }
     if (e.repeat) { e.preventDefault(); return; }
     if (e.metaKey || (e.ctrlKey && e.key !== "Backspace") || (e.altKey && e.key !== "Backspace")) return;
@@ -589,6 +650,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
   /* ---------- till roll ---------- */
   function galleyWhat() {
     if (test.code) return `SCRIPT · ${test.snippet.title.toUpperCase()}`;
+    if (test.quote) return `QUOTE${test.quote.source ? " · " + test.quote.source.toUpperCase() : ""}`;
     if (test.source.kind === "practice") return "PRACTICE";
     if (test.source.kind === "daily") return `DAILY · ${dayLabel(test.source.day).toUpperCase()}`;
     if (test.source.kind === "challenge") return `CHALLENGE · ${test.opts.mode === "time" ? test.opts.length + " SECONDS" : test.targets.length + " WORDS"}`;
@@ -623,11 +685,11 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
   stage.addEventListener("mousedown", (e) => { e.preventDefault(); focusInput(); });
   document.addEventListener("keydown", (e) => {
     if (drawerOpen) { if (e.key === "Escape") { e.preventDefault(); closeSettings(); } return; }
-    if (!statsView.hidden) { if (e.key === "Escape") { e.preventDefault(); location.hash = ""; } return; }
+    if (!statsView.hidden) { if (e.key === "Escape" && !/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) { e.preventDefault(); location.hash = ""; } return; }
     if (document.activeElement === input || e.target.tagName === "INPUT") return;
     if (e.target.tagName === "BUTTON" && (e.key === "Enter" || e.key === " ")) return;
     if (e.key === "Tab") { e.preventDefault(); test.ended ? nextFromResults() : fresh(); return; }
-    if (test.ended) { if (e.key === "Enter") { e.preventDefault(); $("#btnPractice")?.click(); } return; }
+    if (test.ended) { if (e.key === "Enter") { e.preventDefault(); $("#btnPractice")?.click(); } else if (e.key === "Escape" && test.quote) { e.preventDefault(); restart(); } return; }
     if (!e.metaKey && !e.ctrlKey && e.key.length === 1) { e.preventDefault(); focusInput(); }
   });
   addEventListener("resize", () => {
@@ -639,7 +701,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
 
   /* ---------- finishing ---------- */
   function nextFromResults() {
-    if (test.code) { fresh(); return; }
+    if (test.code || test.quote) { fresh(); return; }
     newTest(test.source.kind === "mix" ? { ...test.source, seed: undefined } : { kind: "normal" });
   }
   async function finish(t) {
@@ -653,10 +715,10 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     const result = buildResult({
       id: uuid(), userId: state.profile.id, at: Date.now(), session: test, stats: r,
       meta: {
-        kind: s.kind, mode: test.code ? "code" : s.kind === "practice" ? "practice" : test.flow ? "flow" : test.opts.mode,
-        length: test.code || s.kind === "practice" ? test.targets.length : test.opts.mode === "time" ? test.opts.length : test.opts.mode === "words" ? test.targets.length : null,
-        list: test.code ? null : test.opts.list, punct: !test.code && !!test.opts.punct, nums: !test.code && !!test.opts.nums, sudden: test.sudden,
-        snippet: test.code ? test.snippet.id : null, seed: test.seed, wordsDone: test.committed
+        kind: s.kind, mode: test.code ? "code" : test.quote ? "quote" : s.kind === "practice" ? "practice" : test.flow ? "flow" : test.opts.mode,
+        length: test.code || test.quote || s.kind === "practice" ? test.targets.length : test.opts.mode === "time" ? test.opts.length : test.opts.mode === "words" ? test.targets.length : null,
+        list: test.code || test.quote ? null : test.opts.list, punct: !test.code && !test.quote && !!test.opts.punct, nums: !test.code && !test.quote && !!test.opts.nums, sudden: test.sudden,
+        snippet: test.code ? test.snippet.id : test.quote ? test.quote.id : null, seed: test.seed, wordsDone: test.committed
       }
     });
     const thisGalley = galleyNo();
@@ -754,7 +816,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       ${test.code
         ? `<div class="ticket"><small>** WHAT IT DOES **</small></div><div class="rtext">${esc(test.snippet.explain)}</div>
           <div class="dash"></div><div class="ticket"><small>** OUTPUT **</small></div><div class="rpre">${esc(test.snippet.output)}</div>`
-        : `<div class="ticket"><small>** NEXT TICKET **</small><b>${r.weak.length ? esc(r.weak.slice(0, 5).map((w) => w.word).join(" · ")) : "nothing to practise"}</b></div>`}
+        : `${test.quote && (test.quote.by || test.quote.source) ? `<div class="rtext attr">- ${esc([test.quote.by, test.quote.source].filter(Boolean).join(", "))}</div><div class="dash"></div>` : ""}<div class="ticket"><small>** NEXT TICKET **</small><b>${r.weak.length ? esc(r.weak.slice(0, 5).map((w) => w.word).join(" · ")) : "nothing to practise"}</b></div>`}
       <div class="barcode"></div>`);
     receipt.classList.add("done");
     receipt.scrollTop = 0;
@@ -768,7 +830,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     </div>
     <div class="panel"><h2>Speed</h2><div class="legend" id="legend"></div><div class="chart" id="chart"></div></div>`;
   const challengeCard = () => {
-    const ok = test.code || ((test.source.kind === "normal" || test.source.kind === "challenge" || test.source.kind === "daily") && !test.flow);
+    const ok = test.code || test.quote || ((test.source.kind === "normal" || test.source.kind === "challenge" || test.source.kind === "daily") && !test.flow);
     if (!ok || !test.committed) return "";
     let name = "";
     try { name = localStorage.getItem("retype-name") || ""; } catch { /* fine */ }
@@ -793,9 +855,21 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     // the mix draws on everything you've typed, with this galley's trouble words first
     const mixWords = [...new Set([...r.weak.map((w) => w.word), ...topWeak(state.weak, 12).map((w) => w.word)])].slice(0, 12);
     const modeLabel = cfg.mode === "words" ? `${cfg.words}-word` : cfg.mode === "time" ? `${cfg.time}-second` : "flow";
+    const q = test.quote;
+    const canReport = q && q.community && !shared.has(q.id);
+    const quotePanel = q ? `<div class="panel"><h2>The quote</h2><p class="quoteblock">${esc(q.text)}</p>${q.by || q.source ? `<div class="quoteby">- ${esc([q.by, q.source].filter(Boolean).join(", "))}${q.community && q.name ? ` · added by ${esc(q.name)}` : ""}</div>` : ""}
+      ${canReport ? `<div class="qreport" id="qrep"><button type="button" class="linkbtn" id="qrepOpen">Report this quote</button></div>` : ""}</div>` : "";
+    const keepable = q && q.shared && !myQuotes.some((x) => x.text.toLowerCase() === q.text.toLowerCase());
+    const nextCard = q
+      ? `<div class="card"><h3>Next quote</h3><p>Another ${cfg.quoteLen === "any" ? "" : cfg.quoteLen + " "}quote at random.</p><button class="go" id="btnNext">Start <kbd>tab</kbd></button></div>
+         <div class="card"><h3>Type it again</h3><p>The same quote, now you know where it bites.</p><button class="go" id="btnAgain">Start <kbd>esc</kbd></button></div>
+         ${keepable ? `<div class="card"><h3>Keep this quote</h3><p>Add it to your own quotes.</p><button class="go" id="btnKeep">Add to yours</button></div>` : ""}`
+      : `<div class="card"><h3>Next galley</h3><p>${test.source.kind === "mix" ? "Another mixed galley, same weak words." : `A fresh ${modeLabel} galley.`}</p>
+          <button class="go" id="btnNext">Start <kbd>tab</kbd></button></div>`;
     during.hidden = true; after.hidden = false;
     after.innerHTML = `
       <div class="sheet">
+        ${quotePanel}
         ${statBlock(r, `<div class="stat"><label>Best streak</label><b>${r.best}</b></div><div class="stat"><label>Fixes</label><b>${r.corrections}</b></div>`)}
         <div class="panels">
           <div class="panel"><h2>Weak words</h2><p>Errors, plus how much slower than your median you typed them.</p>${weakRows}</div>
@@ -810,8 +884,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
           <button class="go" id="btnMix" ${mixWords.length ? "" : "disabled"}>Start mixed galley</button></div>
         <div class="card"><h3>Drill slow pairs</h3><p>${drill ? `30 words built around ${esc(drill.pairs.join(", "))}.` : "Needs a few more slow pairs first."}</p>
           <button class="go" id="btnDrill" ${drill ? "" : "disabled"}>Start drill</button></div>
-        <div class="card"><h3>Next galley</h3><p>${test.source.kind === "mix" ? "Another mixed galley, same weak words." : `A fresh ${modeLabel} galley.`}</p>
-          <button class="go" id="btnNext">Start <kbd>tab</kbd></button></div>
+        ${nextCard}
         ${shareCard}${challengeCard()}
       </div>
       <div class="foot">${r.keys} keystrokes timed. Latencies after a pause, a correction or a gap over 2s are left out.</div>`;
@@ -820,6 +893,28 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     $("#btnMix").onclick = () => newTest({ kind: "mix", weak: mixWords, ratio: cfg.ratio });
     $("#btnDrill").onclick = () => { if (drill) newTest({ kind: "practice", words: drill.words, label: `Pair drill · ${drill.pairs.join(" ")}` }); };
     $("#btnNext").onclick = nextFromResults;
+    $("#btnAgain")?.addEventListener("click", restart);
+    $("#qrepOpen")?.addEventListener("click", () => {
+      const box = $("#qrep");
+      if (!user) { box.innerHTML = `<span class="sub">Sign in to report a quote.</span><button type="button" class="go" id="qrepIn">Sign in</button>`; $("#qrepIn").onclick = signIn; return; }
+      box.innerHTML = `<span class="sub">What's wrong with it?</span>${Object.entries(REPORT_REASONS).map(([k, l]) => `<button type="button" class="go" data-reason="${k}">${esc(l)}</button>`).join("")}<span class="sub" id="qrepMsg"></span>`;
+      box.querySelectorAll("[data-reason]").forEach((b) => b.onclick = async () => {
+        box.querySelectorAll("button").forEach((x) => { x.disabled = true; });
+        try {
+          const r = await cloud.reportQuote(q.id, b.dataset.reason);
+          box.innerHTML = `<span class="sub">Thanks. ${r.hidden ? "It's been taken down until it's reviewed." : "It'll be looked at."}</span>`;
+          if (r.hidden) refreshQuotes().catch(() => {});
+        } catch (e) {
+          $("#qrepMsg").textContent = e?.message?.replace(/^.*?: /, "") || "Couldn't send that.";
+          box.querySelectorAll("button").forEach((x) => { x.disabled = false; });
+        }
+      });
+    });
+    $("#btnKeep")?.addEventListener("click", (e) => {
+      const out = addQuotes(myQuotes, [q]);
+      if (out.added) { myQuotes = out.list; saveQuotes(myQuotes); }
+      e.currentTarget.textContent = "Added"; e.currentTarget.disabled = true;
+    });
     $("#ratio").onclick = (e) => {
       const b = e.target.closest("button"); if (!b) return;
       cfg.ratio = +b.dataset.v; saveSettings(cfg);
@@ -893,6 +988,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       try { localStorage.setItem("retype-name", name); } catch { /* fine */ }
       const from = { name, wpm: r.wpm, acc: r.acc };
       const c = test.code ? { mode: "code", snippet: test.snippet.id, from }
+        : test.quote ? { mode: "quote", quote: test.quote, from }
         : { seed: test.seed, mode: test.opts.mode, length: test.opts.mode === "time" ? test.opts.length : test.targets.length, list: test.opts.list, punct: test.opts.punct, nums: test.opts.nums, sudden: test.opts.sudden, from };
       const link = `${location.origin}${location.pathname}#c=${encodeChallenge(c)}`;
       const out = $("#chLink"); out.value = link; out.hidden = false;
@@ -909,6 +1005,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
   }
   function challengeSource(c) {
     if (c.mode === "code") return { kind: "code", idx: SNIPPETS.findIndex((s) => s.id === c.snippet), from: c.from };
+    if (c.mode === "quote") return { kind: "quote", quote: c.quote, from: c.from };
     return { kind: "challenge", seed: c.seed, from: c.from, opts: { mode: c.mode, length: c.length, list: c.list, punct: c.punct, nums: c.nums, sudden: c.sudden } };
   }
 
@@ -920,10 +1017,10 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       if (c) { newTest(challengeSource(c)); }
       else { notice = "That challenge link didn't work, so here's an ordinary galley."; newTest({ kind: "normal" }); }
     }
-    const page = location.hash === "#stats" ? "stats" : location.hash === "#boards" ? "boards" : null;
+    const page = location.hash === "#stats" ? "stats" : location.hash === "#boards" ? "boards" : location.hash === "#quotes" ? "quotes" : null;
     // both pages draw into the same view; the typing view hides behind either
     statsView.hidden = !page; typingView.hidden = !!page;
-    for (const id of ["openStats", "openBoards"]) $("#" + id)?.classList.toggle("on", page === id.slice(4).toLowerCase());
+    for (const id of ["openStats", "openBoards", "openQuotes"]) $("#" + id)?.classList.toggle("on", page === id.slice(4).toLowerCase());
     const back = () => { location.hash = ""; };
     const boardHandlers = {
       signedIn: !!user,
@@ -938,7 +1035,25 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
         return { ...p, entry };
       } : null
     };
-    if (page === "boards") {
+    if (page === "quotes") {
+      input.blur();
+      renderQuotes(statsView, {
+        mine: () => myQuotes, community: () => community.list, shared: () => shared, admin: () => admin, signedIn: () => !!user, cfg,
+        onSignIn: signIn,
+        share: async (list) => { const r = (await cloud.submitQuotes(list)).results; refreshQueueCount(); return r; },
+        withdraw: (id) => cloud.withdrawQuote(id),
+        report: (id, reason) => cloud.reportQuote(id, reason),
+        review: async (id, action, extra) => { const r = await cloud.reviewQuote(id, action, extra); refreshQueueCount(); return r; },
+        queue: () => cloud.quoteQueue(),
+        refresh: refreshQuotes,
+        onSave: (list) => { myQuotes = list; return saveQuotes(list); },
+        onCfg: (ch) => { Object.assign(cfg, ch); saveSettings(cfg); },
+        onType: (quote) => { location.hash = ""; newTest({ kind: "quote", quote }); },
+        onTypeRandom: () => { location.hash = ""; newTest(quoteSource(test?.quote?.id)); },
+        onBack: back
+      });
+      window.scrollTo(0, 0);
+    } else if (page === "boards") {
       input.blur();
       renderBoards(statsView, { ...boardHandlers, onBack: back, onDaily: () => { location.hash = ""; newTest(dailySource()); }, onSignIn: signIn });
       window.scrollTo(0, 0);
