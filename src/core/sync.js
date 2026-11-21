@@ -7,6 +7,7 @@
 import { applyResult } from "../storage/progress-service.js";
 import { legacyXp } from "./levels.js";
 import { mergeTop } from "./pp.js";
+import { mergeFeats } from "./feats.js";
 
 export const DOC_VERSION = 1;
 export const WEAK_CAP = 1500;
@@ -14,7 +15,7 @@ export const RECENT = 60;
 export const FOLDED_CAP = 300;
 
 export const emptyDoc = () => ({
-  v: DOC_VERSION, bests: {}, weak: {}, days: [], bestStreak: 0, xp: 0, top: [],
+  v: DOC_VERSION, bests: {}, weak: {}, days: [], bestStreak: 0, xp: 0, top: [], feats: {},
   totals: { galleys: 0, secs: 0, keys: 0, perfect: 0 },
   folded: []
 });
@@ -29,6 +30,7 @@ export function docFrom(x) {
     bestStreak: x.bestStreak || 0, totals: { ...e.totals, ...(x.totals || {}) },
     xp: x.xp ?? legacyXp(x.totals),
     top: Array.isArray(x.top) ? x.top : [],
+    feats: x.feats && typeof x.feats === "object" ? x.feats : {},
     folded: Array.isArray(x.folded) ? x.folded : []
   };
 }
@@ -84,6 +86,7 @@ export function mergeGuest(doc, local, pending, today) {
     weak: mergeWeak(d.weak, local.weak),
     // the browser's top plays may include galleys from before PP (or before the account had them)
     top: mergeTop(d.top, local.top),
+    feats: mergeFeats(d.feats, local.feats),
     bestStreak: Math.max(d.bestStreak, local.bestStreak || 0)
   };
 }

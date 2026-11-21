@@ -67,19 +67,21 @@ export async function createCloud(config, { emulators = false } = {}) {
       return s.exists() ? s.data() : null;
     },
     setProfile: (uid, name) => F.setDoc(F.doc(db, "profiles", uid), { name }),
-    async dailyBoard(day, n = 50) {
-      const snap = await F.getDocs(F.query(F.collection(db, "boards", `daily-${day}`, "entries"), F.orderBy("score", "desc"), F.limit(n)));
+    // board: "daily" (ordered by score) or "dsurv", the daily survival run (ordered by rank:
+    // words survived, then score)
+    async dailyBoard(day, n = 50, board = "daily") {
+      const snap = await F.getDocs(F.query(F.collection(db, "boards", `${board}-${day}`, "entries"), F.orderBy(board === "dsurv" ? "rank" : "score", "desc"), F.limit(n)));
       return snap.docs.map((d) => d.data());
     },
-    async dailyEntry(day, uid) {
-      const s = await F.getDoc(F.doc(db, "boards", `daily-${day}`, "entries", uid));
+    async dailyEntry(day, uid, board = "daily") {
+      const s = await F.getDoc(F.doc(db, "boards", `${board}-${day}`, "entries", uid));
       return s.exists() ? s.data() : null;
     },
-    /** Place on the board for a score, and how many are on it. */
-    async dailyPlace(day, score) {
-      const entries = F.collection(db, "boards", `daily-${day}`, "entries");
+    /** Place on the board for a score (a rank on the survival board), and how many are on it. */
+    async dailyPlace(day, score, board = "daily") {
+      const entries = F.collection(db, "boards", `${board}-${day}`, "entries");
       const [above, all] = await Promise.all([
-        F.getCountFromServer(F.query(entries, F.where("score", ">", score))),
+        F.getCountFromServer(F.query(entries, F.where(board === "dsurv" ? "rank" : "score", ">", score))),
         F.getCountFromServer(entries)
       ]);
       return { place: above.data().count + 1, of: all.data().count };

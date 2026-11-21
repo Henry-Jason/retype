@@ -9,6 +9,7 @@ import { mulberry32 } from "./rng.js";
 import { genWords } from "./words.js";
 import { dailySeed, DAILY } from "./challenge.js";
 import { score } from "./progress.js";
+import { survivalSeq, replayLives, DAILY_SURV, dailySurvSeed, SURVIVAL } from "./survival.js";
 
 export const LIMITS = {
   maxWpm: 250,          // faster than any human on record over a full galley
@@ -38,7 +39,7 @@ export function rescore(result) {
     const [w, pos, ch, ok, ms, flags] = k;
     if (!Number.isFinite(ms) || ms < 0 || ms + 1 < lastMs) return fail("keys out of order");
     lastMs = Math.max(lastMs, ms);
-    if (flags === 2) continue; // a correction: costs nothing here, the miss it fixed already counted
+    if (flags === 2 || flags === 4) continue; // a correction (the miss it fixed already counted), or a survival life lost to speed
     if (!Number.isInteger(w) || w < 0 || w >= targets.length || !Number.isInteger(pos) || pos < 0) return fail("key outside the galley");
     const tgt = targets[w];
     const expected = flags === 1 ? pos >= tgt.length : tgt[pos] === ch;
@@ -52,7 +53,7 @@ export function rescore(result) {
 
   // A word counts if, the last time it was left, it read exactly right. The final word has no
   // space after it, and a words galley only ends once it's typed exactly.
-  const last = Math.max(...keys.filter((k) => k[5] !== 2).map((k) => k[0]));
+  const last = Math.max(...keys.filter((k) => k[5] !== 2 && k[5] !== 4).map((k) => k[0]));
   let chars = 0;
   for (let w = 0; w <= last; w++) {
     const tgt = targets[w], len = spaceAt.has(w) ? spaceAt.get(w) : tgt.length;
@@ -89,4 +90,33 @@ export function verifyDaily(result) {
   if (!t.length || t.some((w, i) => w !== words[i])) return fail("not that day's words");
   if (result.wordsDone !== DAILY.length) return fail("not finished");
   return verifyForBoard({ ...result, targets: words });
+}
+
+/**
+ * The daily survival run: that day's words, the fixed rules, every life accounted for from the
+ * keystrokes, and a run that really ended (out of lives, or the end of the roll).
+ * Returns the recomputed numbers plus words survived, or why not.
+ */
+export function verifyDailySurvival(result) {
+  if (result.kind !== "dsurv" || result.mode !== "survival") return fail("not a daily survival run");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(result.day || "")) return fail("no day");
+  const s = result.surv || {};
+  if (s.lives !== DAILY_SURV.lives || !!s.regen !== DAILY_SURV.regen || s.floor !== DAILY_SURV.floor || result.punct || result.nums) return fail("wrong settings for the daily survival");
+  if (result.seed !== dailySurvSeed(result.day)) return fail("not that day's words");
+  const done = result.wordsDone;
+  if (!Number.isInteger(done) || done < 1) return fail("nothing finished");
+  const t = result.targets || [];
+  const words = survivalSeq(result.seed, Math.max(t.length, done + 1));
+  if (!t.length || t.some((w, i) => w !== words[i])) return fail("not that day's words");
+  let keys = result.keys;
+  if (typeof keys === "string") { try { keys = JSON.parse(keys); } catch { return fail("unreadable keystroke log"); } }
+  if (!Array.isArray(keys)) return fail("unreadable keystroke log");
+  const life = replayLives(keys, words, DAILY_SURV, Number(result.secs) || null);
+  if (!life.ok) return life;
+  if (life.words !== done) return fail("words survived don't match the keystrokes");
+  if (life.lives !== (s.left ?? -1)) return fail("lives left don't match the keystrokes");
+  if (life.lives > 0 && done < SURVIVAL.maxWords) return fail("the run didn't end");
+  const v = verifyForBoard({ ...result, targets: words, keys });
+  if (!v.ok) return v;
+  return { ...v, words: done };
 }

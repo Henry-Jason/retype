@@ -6,18 +6,20 @@ import { analyse, describe } from "../core/analysis.js";
 import { chartData } from "../core/chart-data.js";
 import { SNIPPETS, scriptLines } from "../core/code.js";
 import { buildResult } from "../core/result.js";
-import { streak, dayKey, topWeak, score } from "../core/progress.js";
+import { streak, dayKey, topWeak, score, modeKey } from "../core/progress.js";
 import { rankFrom, grade } from "../core/pp.js";
 import { encodeChallenge, decodeChallenge, dailySeed, compare, DAILY } from "../core/challenge.js";
 import { record, emptyState, loadProgress } from "../storage/progress-service.js";
 import { syncAccount, pushGalley, forgetAccount, clearAccount, ensureProfile, ensurePpBoard } from "../storage/account-sync.js";
 import { DEFAULTS, PRESETS, LIMITS, SLIDE, FS, FONTS, SETTINGS, saveSettings } from "./settings.js";
-import { playKey, playErr } from "./sound.js";
+import { playKey, playErr, playBell, playThunk } from "./sound.js";
 import { renderChart, drawChart } from "./chart.js";
 import { drawCard, downloadCard } from "./share.js";
 import { renderStats, bestLabel } from "./stats.js";
 import { renderBoards, ordinal } from "./boards.js";
 import { levelFrom } from "../core/levels.js";
+import { UNLOCKS, isUnlocked, needs, chosen, newlyUnlocked } from "../core/unlocks.js";
+import { headline, featById } from "../core/feats.js";
 import { cleanName } from "../core/sync.js";
 import { $, esc, pad, stampDate, uuid } from "./util.js";
 import { pickQuote, words as quoteWords, LENGTHS as QUOTE_LENGTHS, addQuotes } from "../core/quotes.js";
@@ -25,7 +27,9 @@ import { loadQuotes, saveQuotes, loadCommunity, saveCommunity, slim, STALE, load
 import { REPORT_REASONS, isFav, favKey } from "../core/quotes.js";
 import { mergeSaved, recordChange, setFav, favKeys, sameSaved, checkSize, emptySaved } from "../core/quote-sync.js";
 import { renderQuotes } from "./quotes.js";
-import { SURVIVAL, survivalWords, regionStart, rollingWpm, loseLife, costsLife, afterCleanWord, survivalOpts, survivalLabel } from "../core/survival.js";
+import { renderEdition } from "./edition.js";
+import { buildEdition, weekStart, weekKey } from "../core/edition.js";
+import { SURVIVAL, nextBatch, DAILY_SURV, dailySurvSeed, regionStart, rollingWpm, loseLife, costsLife, afterCleanWord, survivalOpts, survivalLabel } from "../core/survival.js";
 
 export function startApp({ cfg, store, progress, accountsEnabled = false, cloudReady = Promise.resolve(null) }) {
   const stage = $("#stage"), track = $("#track"), tape = $(".tape"), pencil = $("#pencil"), input = $("#hidden"), tag = $("#tag");
@@ -130,12 +134,46 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     root.style.setProperty("--type", FONTS[cfg.font]);
     root.style.setProperty("--slide", SLIDE[cfg.slide] + "ms");
     if (cfg.theme === "system") delete root.dataset.rtTheme; else root.dataset.rtTheme = cfg.theme;
+    // the desk: pencil colour, till-roll paper and stamp ink, if they're unlocked
+    const have = deskHave(), dark = cfg.theme === "dark" || (cfg.theme === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+    const pen = chosen("pencil", cfg.pencil, have), ink = chosen("ink", cfg.ink, have);
+    if (pen.id === "red") root.style.removeProperty("--pencil"); else root.style.setProperty("--pencil", dark ? pen.dark : pen.color);
+    if (ink.color) root.style.setProperty("--stamp", dark ? ink.dark : ink.color); else root.style.removeProperty("--stamp");
+    root.dataset.paper = chosen("paper", cfg.paper, have).id;
     const b = document.body.classList;
     b.toggle("hide-live", !cfg.live); b.toggle("hide-margin", !cfg.margin); b.toggle("hide-roll", !cfg.roll); b.toggle("focus", cfg.focus);
     if (!cfg.focus) b.remove("typing-now");
   }
   const fmtPp = (x) => Math.round(x).toLocaleString("en-IE");
+  /* ---------- the weekly edition ---------- */
+  // Last week's front page is "new" until you've read it, if you typed anything last week.
+  let editionNew = false;
+  const lastWeekKey = () => weekKey(weekStart(weekStart(Date.now()) - 86400000));
+  async function checkEdition() {
+    let seen = null;
+    try { seen = localStorage.getItem("retype-edition-seen"); } catch { /* fine */ }
+    if (seen === lastWeekKey()) { editionNew = false; return; }
+    const results = await store.all();
+    const e = buildEdition(results, weekStart(weekStart(Date.now()) - 86400000), {});
+    editionNew = !e.quiet;
+    if (editionNew) { renderNavs(); toast("A new edition of The Retype Weekly is out. It's under Stats."); }
+  }
+  async function showEdition() {
+    const results = await store.all();
+    const first = results.reduce((m, r) => Math.min(m, r.at), Infinity);
+    renderEdition(statsView, {
+      results, feats: state.feats || {}, first: Number.isFinite(first) ? first : null,
+      name: boardName || (user?.name || "").split(" ")[0] || "Local typist",
+      onBack: () => { location.hash = ""; },
+      onPractise: (w) => { location.hash = ""; newTest({ kind: "practice", words: shuffleSpread([w, w, w, w, w, w, w, w], mulberry32(randomSeed())), label: `Practice · word of the week: ${w}` }); }
+    });
+    try { localStorage.setItem("retype-edition-seen", lastWeekKey()); } catch { /* fine */ }
+    if (editionNew) { editionNew = false; renderNavs(); }
+  }
+  const deskHave = () => ({ level: levelFrom(state.xp).level, feats: state.feats || {} });
+  matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => applyDisplay());
   function updateStanding() {
+    applyDisplay();
     const rk = rankFrom(state.top), st = streak(state.days, dayKey(Date.now()));
     const bits = [];
     if (state.totals.galleys || state.xp) bits.push(`<b class="lv" title="${levelFrom(state.xp).into} / ${levelFrom(state.xp).need} XP to the next level">Lv ${levelFrom(state.xp).level}</b>`);
@@ -216,9 +254,12 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     more.appendChild(btn("survival", surv, () => { cfg.mode = "survival"; saveSettings(cfg); newTest({ kind: "normal" }); }));
     more.appendChild(btn("python", !!(test && test.code), () => newTest({ kind: "code", idx: test && test.code ? test.source.idx : 0 })));
     more.appendChild(btn("daily", !!(test && test.source.kind === "daily"), () => newTest(dailySource())));
+    const ds = btn("daily survival", !!(test && test.source.kind === "dsurv"), () => newTest(dailySurvSource()));
+    ds.title = "Today's survival run: the same words for everyone, 3 lives, a 30 wpm floor";
+    more.appendChild(ds);
     more.appendChild(btn("quote", !!(test && test.quote), () => newTest(quoteSource(test?.quote?.id))));
     box.appendChild(more);
-    if (surv) {
+    if (surv && test.source.kind === "normal") {
       // lives and regen, one click each; the speed floor is in Settings
       const g = document.createElement("div"); g.className = "grp";
       g.innerHTML = `<span class="lbl">lives</span>`;
@@ -258,7 +299,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     }
     nav("navbtn" + (location.hash === "#quotes" ? " on" : ""), `${ICON_QUOTE}Quotes${queueCount ? ` <i class="badge" title="${queueCount} to review">${queueCount}</i>` : ""}`, () => { location.hash = "quotes"; }, "openQuotes");
     nav("navbtn" + (location.hash === "#boards" ? " on" : ""), `${ICON_PODIUM}Boards`, () => { location.hash = "boards"; }, "openBoards");
-    nav("navbtn" + (location.hash === "#stats" ? " on" : ""), `${ICON_CHART}Stats`, () => { location.hash = "stats"; }, "openStats");
+    nav("navbtn" + (location.hash === "#stats" ? " on" : ""), `${ICON_CHART}Stats${editionNew ? ` <i class="badge" title="A new weekly edition is out">new</i>` : ""}`, () => { location.hash = editionNew ? "edition" : "stats"; }, "openStats");
     nav("navbtn", `${ICON_GEAR}Settings`, openSettings, "openSettings");
   }
 
@@ -266,15 +307,16 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
   // The Cloud Function checks the galley and posts it a few seconds after it's saved.
   async function showBoardPlace(result, band) {
     if (!cloud?.dailyEntry || !band) return;
-    const note = document.createElement("div"); note.className = "note"; note.textContent = "Checking your daily for the board…";
+    const board = result.kind === "dsurv" ? "dsurv" : "daily";
+    const note = document.createElement("div"); note.className = "note"; note.textContent = `Checking your ${board === "dsurv" ? "daily survival run" : "daily"} for the board…`;
     band.appendChild(note);
     for (let i = 0; i < 10; i++) {
       await new Promise((ok) => setTimeout(ok, i ? 2000 : 1500));
       if (!note.isConnected) return;
       try {
-        const e = await cloud.dailyEntry(result.day, user.uid);
+        const e = await cloud.dailyEntry(result.day, user.uid, board);
         if (e && e.resultId === result.id) {
-          const p = await cloud.dailyPlace(result.day, e.score);
+          const p = await cloud.dailyPlace(result.day, board === "dsurv" ? e.rank : e.score, board);
           note.textContent = `On today's board: ${ordinal(p.place)} of ${p.of}.`;
           return;
         }
@@ -379,11 +421,25 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       html += `<div class="opt"><div class="t">${s.label}</div>${s.help ? `<div class="h">${s.help}</div>` : ""}<div class="seg" role="group" aria-label="${s.label}">` +
         s.options.map(([v, l]) => `<button type="button" data-k="${s.key}" data-v='${JSON.stringify(v)}' aria-pressed="${String(cfg[s.key]) === String(v)}">${l}</button>`).join("") + `</div></div>`;
     }
+    // the desk: earned pencils, papers and inks; locked ones say what they need
+    const have = deskHave();
+    const deskGroup = (kind, title, help) => `<div class="opt"><div class="t">${title}</div><div class="h">${help}</div><div class="seg desk" role="group" aria-label="${title}">` +
+      UNLOCKS[kind].map((it) => {
+        const open = isUnlocked(it, have), on = chosen(kind, cfg[kind], have).id === it.id;
+        const sw = it.color ? `<i class="sw" style="background:${it.color}"></i>` : "";
+        return `<button type="button" data-desk="${kind}" data-id="${it.id}" aria-pressed="${on}" ${open ? "" : `disabled title="${esc(needs(it, (id) => featById(id)?.hint || id))}"`}>${sw}${esc(it.label)}${open ? "" : `<small>${it.level != null ? `Level ${it.level}` : "Headline"}</small>`}</button>`;
+      }).join("") + `</div></div>`;
+    const desk = `<div class="dsec">Desk</div>` + deskGroup("pencil", "Pencil", "The caret and the proof marks. More colours come with levels and headlines.") +
+      deskGroup("paper", "Till roll", "The paper your receipts print on.") + deskGroup("ink", "Stamp ink", "The finish stamp.");
+    html = html.replace(`<div class="dsec">Accuracy</div>`, desk + `<div class="dsec">Accuracy</div>`);
     html = html.replace(`<div class="dsec">Code</div>`, `<div class="dact"><button type="button" id="manageQuotes">Your quotes</button></div><div class="dsec">Code</div>`);
     html += `<div class="dsec">Keys</div><div class="keys"><kbd>tab</kbd><span>New galley (also from the results)</span><kbd>esc</kbd><span>Restart the same galley, finish a flow session, or close this panel</span><kbd>enter</kbd><span>Practise weak words, from the results</span><kbd>ctrl</kbd><span>with backspace, delete the whole word</span></div>`;
     html += `<div class="dsec">Data</div><div class="h" style="font-size:13px;color:var(--desk-muted)">Settings are saved in this browser only. Your progress can be cleared from the Stats page.</div><div class="dact"><button type="button" id="resetSettings">Reset all settings</button></div>`;
     body.innerHTML = html;
-    body.querySelectorAll(".seg button").forEach((b) => b.onclick = () => {
+    body.querySelectorAll("[data-desk]").forEach((b) => b.onclick = () => {
+      cfg[b.dataset.desk] = b.dataset.id; saveSettings(cfg); applyDisplay(); renderSettings();
+    });
+    body.querySelectorAll(".seg:not(.desk) button").forEach((b) => b.onclick = () => {
       const s = SETTINGS.find((x) => x.key === b.dataset.k);
       cfg[s.key] = JSON.parse(b.dataset.v); saveSettings(cfg); applyDisplay();
       if (s.quote) { if (test && test.quote && !test.ended) newTest(quoteSource(test.quote.id)); renderSettings(); return; }
@@ -410,7 +466,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     const mode = cfg.mode === "survival" && source.kind !== "normal" ? "words" : cfg.mode;
     const o = source.opts || { mode, length: mode === "time" ? cfg.time : cfg.words, list: cfg.list, punct: cfg.punct, nums: cfg.nums, sudden: cfg.sudden, ...(mode === "survival" ? { surv: survivalOpts(cfg) } : {}) };
     const flow = !code && !practice && !quoteMode && o.mode === "flow";
-    const survival = source.kind === "normal" && o.mode === "survival";
+    const survival = (source.kind === "normal" || source.kind === "dsurv") && o.mode === "survival";
     const infinite = !code && !practice && !quoteMode && (o.mode === "time" || flow || survival);
     const seed = source.seed ?? randomSeed(), rand = mulberry32(seed);
     const genOpts = { rand, list: o.list, weak: source.weak || null, ratio: source.ratio || 0, punct: o.punct, nums: o.nums };
@@ -422,12 +478,14 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       targets = typable.map((l) => l.target); lineNo = typable.map((l) => l.n);
     } else if (practice) targets = source.words.slice();
     else if (quoteMode) targets = quoteWords(source.quote.text);
-    else if (survival) targets = survivalWords(0, 80, { rand, punct: o.punct, nums: o.nums });
+    else if (survival) targets = nextBatch([], { rand, punct: o.punct, nums: o.nums });
     else targets = genWords(infinite ? 80 : o.length, genOpts);
     test = {
       source: { ...source, seed }, seed, rand, genOpts, targets, typed: targets.map(() => ""), werr: targets.map(() => 0),
       cur: 0, first: 0, committed: 0, infinite, flow, limit: o.mode === "time" && infinite ? o.length : null, opts: o,
       sudden: !!o.sudden && !code && !practice && !flow && !quoteMode && !survival, died: false, quote: quoteMode ? source.quote : null,
+      // your best run of this kind, flagged on the galley where it ended
+      ghost: survival && source.kind === "normal" ? (state.bests[modeKey({ kind: "normal", mode: "survival", surv: o.surv, punct: o.punct, nums: o.nums })]?.words ?? null) : null, beatGhost: false,
       survival, lives: survival ? o.surv.lives : null, charged: new Set(), cleanRun: 0, commits: [], floorSince: 0, floorAt: 0, lost: { miss: 0, slow: 0 }, regained: 0,
       startT: null, pausedTotal: 0, pauseStart: null, lastT: null, gap: false, keys: [], ended: false,
       total: 0, okKeys: 0, streak: 0, best: 0, corrections: [],
@@ -437,6 +495,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     stage.classList.toggle("galley", test.layout === "galley");
     stage.classList.toggle("page", test.layout === "page");
     stage.classList.toggle("code", code);
+    stage.classList.remove("heat1", "heat2", "heat3");
     document.documentElement.style.setProperty("--fs", FS[test.layout][cfg.size] + "px");
     wordEls = []; track.replaceChildren();
     if (test.layout === "page") track.appendChild(pencil); else stage.appendChild(pencil);
@@ -458,7 +517,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     const s = test.source;
     if (s.kind === "code") newTest({ kind: "code", idx: (s.idx + 1) % SNIPPETS.length });
     else if (s.kind === "quote") newTest(quoteSource(s.quote.id));
-    else if (s.kind === "challenge" || s.kind === "daily") newTest({ kind: "normal" });
+    else if (s.kind === "challenge" || s.kind === "daily" || s.kind === "dsurv") newTest({ kind: "normal" });
     else if (s.kind === "practice") newTest({ ...s, seed: undefined, words: shuffleSpread(s.words, mulberry32(randomSeed())) });
     else newTest({ ...s, seed: undefined });
   }
@@ -466,8 +525,14 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     const s = test.source;
     const extra = [];
     if (test.sudden) extra.push("sudden death");
-    if (test.survival) extra.push(`Survival · ${survivalLabel(test.opts.surv)} · <b id="survWords">${test.committed}</b> words`);
+    if (test.survival) extra.push(`Survival · ${survivalLabel(test.opts.surv)} · <b id="survWords">${test.committed}</b> words${test.ghost != null ? ` · <span id="survToBest"></span>` : ""}`);
     if (test.flow) extra.push("flow: no clock, no end");
+    if (s.kind === "dsurv") {
+      tag.hidden = false;
+      tag.innerHTML = `<span>Daily survival · ${dayLabel(s.day)} · ${survivalLabel(test.opts.surv)} · your first attempt today counts · <b id="survWords">${test.committed}</b> words</span><button type="button" id="exitTag">Leave</button>`;
+      $("#exitTag").onclick = () => newTest({ kind: "normal" });
+      return;
+    }
     if (s.kind === "challenge" || s.kind === "daily" || (s.kind === "code" && s.from)) {
       tag.hidden = false;
       const f = s.from;
@@ -520,6 +585,8 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       liveProg.textContent = max > 5 ? `${test.lives}/${max}` : "●".repeat(test.lives) + "○".repeat(max - test.lives);
       liveProg.classList.toggle("dip", test.lives === 1 && max > 1);
       const sw = $("#survWords"); if (sw) sw.textContent = test.committed;
+      const tb = $("#survToBest");
+      if (tb) { const left = test.ghost - test.committed + 1; tb.textContent = test.beatGhost ? "past your best" : left <= 20 ? `${left} to your best` : `best ${test.ghost}`; tb.classList.toggle("close", !test.beatGhost && left <= 20); }
     } else if (test.flow) {
       progLabel.textContent = "Time";
       liveProg.textContent = clock(Math.floor(elapsed()));
@@ -539,6 +606,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       const el = document.createElement("span"); el.className = "w";
       const region = test.survival ? regionStart(i) : null;
       if (region) { el.classList.add("rstart"); el.dataset.region = region; }
+      if (test.ghost != null && i === test.ghost) { el.classList.add("ghost"); el.dataset.ghost = `your best · ${test.ghost}`; }
       for (const ch of test.targets[i]) { const s = document.createElement("span"); s.className = "l"; s.textContent = ch; el.appendChild(s); }
       wordEls[i] = el; frag.appendChild(el);
     }
@@ -598,9 +666,8 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     if (!test.infinite || test.cur < test.targets.length - 30) return;
     const start = test.targets.length;
     if (test.survival && start >= SURVIVAL.maxWords) return;
-    const add = test.survival
-      ? survivalWords(start, Math.min(50, SURVIVAL.maxWords - start), { rand: test.rand, punct: test.opts.punct, nums: test.opts.nums, prev: test.targets[start - 1] })
-      : genWords(50, test.genOpts);
+    const add = test.survival ? nextBatch(test.targets, { rand: test.rand, punct: test.opts.punct, nums: test.opts.nums }) : genWords(50, test.genOpts);
+    if (!add.length) return;
     test.targets.push(...add); test.typed.push(...add.map(() => "")); test.werr.push(...add.map(() => 0));
     renderFrom(start); measure();
   }
@@ -695,21 +762,32 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     test.total++; if (keyOk) test.okKeys++;
     test.werr[w] += missed;
     for (let p = typed.length; p < tgt.length; p++) setLetter(w, p, p === typed.length ? "miss gap" : "miss", tgt[p]);
+    // a space that skips letters can end a survival run, and then the word doesn't count as survived
+    if (test.survival && missed) { hit("miss", t, w); if (test.ended) return; }
     commitWord(w); playKey(cfg.sound);
     if (!ok && test.sudden) { test.died = true; finish(t); return; }
-    if (test.survival) {
-      if (missed) { hit("miss", t, w); if (test.ended) return; }
-      if (afterWord(w, t)) return;
-    }
+    if (test.survival && afterWord(w, t)) return;
     if (!test.infinite && w === test.targets.length - 1) { finish(t); return; }
     test.cur++;
     ensureMore(); maybeShift(); placeCaret(); updateLive();
+    if (test.survival) milestones();
   }
   /* ---------- survival ---------- */
+  // Reaching a new region, and passing your best run: a bell, and the label stamps itself.
+  function milestones() {
+    if (regionStart(test.cur) && test.cur > 0) { wordEls[test.cur]?.classList.add("reached"); playBell(cfg.bell); }
+    if (test.ghost != null && !test.beatGhost && test.committed > test.ghost) {
+      test.beatGhost = true;
+      wordEls[test.ghost]?.classList.add("beaten");
+      playBell(cfg.bell); toast(`Past your best of ${test.ghost} words. Keep going.`, "pb");
+      updateTag();
+    }
+  }
   // A life lost: printed on the roll as a void, and the run ends at none.
   // w: the word a mistake was in; each word costs at most one life, at its first mistake.
-  function hit(why, t, w = null) {
+  function hit(why, t, w = null, at = null) {
     if (w != null) { if (!costsLife(test.charged, w)) return; test.charged.add(w); }
+    if (why === "slow") test.keys.push({ life: true, at: at ?? elapsed(t) }); // logged, so the server can check it
     test.lives = loseLife(test.lives); test.lost[why]++; test.cleanRun = 0;
     const r = document.createElement("div"); r.className = "r bad void";
     r.innerHTML = `<span>VOID · ${why === "slow" ? "TOO SLOW" : esc(test.targets[w]).toUpperCase()}</span><span>${test.lives} LEFT</span>`;
@@ -745,13 +823,16 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     const wpm = rollingWpm({ commits: test.commits, lens, since: test.floorSince, sinceAt: test.floorAt, now });
     if (wpm == null || wpm >= floor) return false;
     test.floorSince = test.committed; test.floorAt = now;
-    hit("slow", t);
+    hit("slow", t, null, now);
     return test.ended;
   }
   function commitWord(w) {
     const ok = test.typed[w] === test.targets[w];
     test.committed++;
     test.streak = ok ? test.streak + 1 : 0; test.best = Math.max(test.best, test.streak);
+    const s = test.streak;
+    stage.classList.toggle("heat1", s >= 25 && s < 50); stage.classList.toggle("heat2", s >= 50 && s < 100); stage.classList.toggle("heat3", s >= 100);
+    if (ok && (s === 25 || s === 50 || s === 100 || (s > 100 && s % 100 === 0))) { playBell(cfg.bell); flash(liveStreak, "mile"); }
     printRow(w);
     if (!ok) { test.corrections.push({ w, note: describe(test.targets[w], test.typed[w]) }); renderCorrections(); }
   }
@@ -801,6 +882,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     if (test.source.kind === "daily") return `DAILY · ${dayLabel(test.source.day).toUpperCase()}`;
     if (test.source.kind === "challenge") return `CHALLENGE · ${test.opts.mode === "time" ? test.opts.length + " SECONDS" : test.targets.length + " WORDS"}`;
     if (test.flow) return "FLOW";
+    if (test.source.kind === "dsurv") return `DAILY SURVIVAL · ${dayLabel(test.source.day).toUpperCase()}`;
     if (test.survival) return `SURVIVAL · ${survivalLabel(test.opts.surv).toUpperCase()}`;
     return test.infinite ? `${test.opts.length} SECONDS` : `${test.targets.length} WORDS`;
   }
@@ -885,7 +967,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
           else if (uid) { sync = "error"; syncError = "offline? it will retry"; }
           updateStanding();
           // the finish band is drawn by now; only add to it if it's still this galley's
-          if (next && result.kind === "daily" && test === finished) showBoardPlace(result, doneBand.querySelector(".doneIn > div"));
+          if (next && (result.kind === "daily" || result.kind === "dsurv") && test === finished) showBoardPlace(result, doneBand.querySelector(".doneIn > div"));
           if (next && change?.inTop && test === finished) showPpPlace(result, doneBand.querySelector(".doneIn > div"));
         });
       }
@@ -910,7 +992,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     }
     const lostBits = test.survival ? [test.lost.miss ? `${test.lost.miss} ${test.lost.miss === 1 ? "word" : "words"} wrong` : "", test.lost.slow ? `${test.lost.slow} too slow` : "", test.regained ? `${test.regained} regained` : ""].filter(Boolean).join(", ") : "";
     const sub = test.survival
-      ? (test.died ? `Out of lives on word ${n + 1}${lostBits ? `: ${lostBits}` : ""}.` : test.committed >= SURVIVAL.maxWords ? `The roll ran out at ${n} words with ${test.lives} ${test.lives === 1 ? "life" : "lives"} left. Nothing more to type.` : `Stopped with ${test.lives} ${test.lives === 1 ? "life" : "lives"} left${lostBits ? ` (${lostBits})` : ""}.`)
+      ? (test.died ? `Out of lives on word ${n + 1}${lostBits ? `: ${lostBits}` : ""}.${test.ghost != null && n < test.ghost ? ` ${test.ghost - n} short of your best (${test.ghost}).` : ""}` : test.committed >= SURVIVAL.maxWords ? `The roll ran out at ${n} words with ${test.lives} ${test.lives === 1 ? "life" : "lives"} left. Nothing more to type.` : `Stopped with ${test.lives} ${test.lives === 1 ? "life" : "lives"} left${lostBits ? ` (${lostBits})` : ""}.`)
       : test.died ? `Sudden death: out on word ${n}.` : clean ? "Not a mark on it." : `${marks} ${marks === 1 ? "correction" : "corrections"} marked · best clean streak ${r.best}`;
     let badges = "";
     const bestWas = (b) => (b.words != null ? `${b.words} words` : b.score.toFixed(1));
@@ -925,6 +1007,23 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     if (change?.isBest) toast(`New personal best · ${bestLabel(change.key)}: ${change.previous ? `${bestWas(change.previous)} → ` : ""}${test.survival ? `${n} words` : score(r.wpm, r.acc).toFixed(1)}`, "pb");
     if (change?.rankUp) toast(`Promoted to ${change.rankAfter.rank.name} · ${Math.round(change.ppAfter)} PP`, "lv");
     if (levelUp) toast(`Level ${change.levelAfter.level}! ${change.levelAfter.need - change.levelAfter.into} XP to the next.`, "lv");
+    // headlines earned, as clippings; and anything they (or a level) unlock for the desk
+    let clips = "";
+    if (change?.feats?.length) {
+      // the first three on the band, the rest waiting in the scrapbook; toasts only when there are a couple
+      change.feats.slice(0, 3).forEach((e) => {
+        const f = featById(e.id), head = headline(e.id, e);
+        clips += `<div class="clip"><small>Extra! Extra!</small><b>${esc(head)}</b><span>${esc(f.dek)}</span></div>`;
+      });
+      if (change.feats.length > 3) clips += `<a class="clip more" href="#stats"><small>And</small><b>${change.feats.length - 3} more ${change.feats.length - 3 === 1 ? "story" : "stories"}</b><span>In your scrapbook, on the Stats page.</span></a>`;
+      if (change.feats.length <= 2) change.feats.forEach((e) => toast(`EXTRA! ${headline(e.id, e)}`, "lv"));
+      else toast(`EXTRA! ${change.feats.length} headlines from one galley.`, "lv");
+      const unlocked = newlyUnlocked({ level: change.levelBefore.level, feats: change.featsBefore }, { level: change.levelAfter.level, feats: state.feats });
+      if (unlocked.length) { toast(`Unlocked for your desk: ${unlocked.map((u) => u.label).join(", ")}. Settings → Desk.`, "pb"); }
+    } else if (levelUp) {
+      const unlocked = newlyUnlocked({ level: change.levelBefore.level, feats: state.feats }, { level: change.levelAfter.level, feats: state.feats });
+      if (unlocked.length) toast(`Unlocked for your desk: ${unlocked.map((u) => u.label).join(", ")}. Settings → Desk.`, "pb");
+    }
     const from = test.source.from;
     if (from && test.committed) {
       const c = compare({ wpm: r.wpm, acc: test.died ? r.acc : r.acc }, from, score), who = from.name || "them";
@@ -946,15 +1045,23 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       const gain = change.ppAfter - change.ppBefore;
       note += `<div class="note">${change.inTop ? `Total ${fmtPp(change.ppAfter)} PP (+${gain.toFixed(1)}).` : `Total ${fmtPp(change.ppAfter)} PP. This one didn't make your top 100.`}</div>`;
     } else if (change && test.source.kind === "normal" && !change.rankAfter.rank && !test.code && !test.survival) note += `<div class="note">Galleys of 15 words or more earn PP, and PP earns a rank.</div>`;
+    // so close: within 5% (or 2 points) of a best you didn't beat
+    if (change && !change.isBest && change.previous && !test.survival && change.previous.words == null) {
+      const gap = change.previous.score - score(r.wpm, r.acc);
+      if (gap > 0 && gap <= Math.max(2, change.previous.score * 0.05)) note += `<div class="note close">Just ${gap.toFixed(1)} short of your best (${change.previous.score.toFixed(1)}).</div>`;
+    }
     if (!test.committed) note = `<div class="note">Nothing finished, so this one wasn't saved.</div>`;
+    const seal = clean && n >= 10 && !test.survival ? "Perfect" : test.survival && change?.isBest && n >= 10 ? "New best" : "";
     doneBand.innerHTML = `<div class="wrap doneIn">
       <div><div class="eyebrow">Galley ${no} · finished</div>
         <div class="dtitle">${esc(what)} in ${r.secs.toFixed(1)}s</div>
-        <div class="dsub">${esc(sub)}</div>${badges ? `<div>${badges}</div>` : ""}${note}</div>
-      <div class="stamp${stamp.cls}" role="img" aria-label="${esc(stamp.aria)}"><b>${stamp.big}</b><span>${stamp.small}</span></div>
+        <div class="dsub">${esc(sub)}</div>${badges ? `<div>${badges}</div>` : ""}${note}${clips ? `<div class="clips">${clips}</div>` : ""}</div>
+      <div class="stamps">${seal ? `<div class="seal" aria-hidden="true"><span>${seal}</span></div>` : ""}<div class="stamp${stamp.cls}" role="img" aria-label="${esc(stamp.aria)}"><b>${stamp.big}</b><span>${stamp.small}</span></div></div>
     </div>`;
     doneBand.hidden = false;
-    if (test.source.kind === "daily" && test.committed && accountsEnabled && !user) {
+    doneBand.classList.remove("slam"); void doneBand.offsetWidth; doneBand.classList.add("slam");
+    setTimeout(() => playThunk(cfg.bell), 230);
+    if ((test.source.kind === "daily" || test.source.kind === "dsurv") && test.committed && accountsEnabled && !user) {
       doneBand.querySelector(".doneIn > div").insertAdjacentHTML("beforeend", `<div class="note">Sign in to put your daily on the board.</div>`);
     }
     window.scrollTo(0, 0);
@@ -1164,6 +1271,10 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     const day = dayKey(Date.now());
     return { kind: "daily", day, seed: dailySeed(day), opts: { ...DAILY } };
   }
+  function dailySurvSource() {
+    const day = dayKey(Date.now());
+    return { kind: "dsurv", day, seed: dailySurvSeed(day), opts: { mode: "survival", punct: false, nums: false, surv: { ...DAILY_SURV } } };
+  }
   function challengeSource(c) {
     if (c.mode === "code") return { kind: "code", idx: SNIPPETS.findIndex((s) => s.id === c.snippet), from: c.from };
     if (c.mode === "quote") return { kind: "quote", quote: c.quote, from: c.from };
@@ -1178,25 +1289,28 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       if (c) { newTest(challengeSource(c)); }
       else { notice = "That challenge link didn't work, so here's an ordinary galley."; newTest({ kind: "normal" }); }
     }
-    const page = location.hash === "#stats" ? "stats" : location.hash === "#boards" ? "boards" : location.hash === "#quotes" ? "quotes" : null;
+    const page = location.hash === "#stats" ? "stats" : location.hash === "#boards" ? "boards" : location.hash === "#quotes" ? "quotes" : location.hash === "#edition" ? "edition" : null;
     // both pages draw into the same view; the typing view hides behind either
     statsView.hidden = !page; typingView.hidden = !!page;
-    for (const id of ["openStats", "openBoards", "openQuotes"]) $("#" + id)?.classList.toggle("on", page === id.slice(4).toLowerCase());
+    for (const id of ["openStats", "openBoards", "openQuotes"]) $("#" + id)?.classList.toggle("on", page === id.slice(4).toLowerCase() || (id === "openStats" && page === "edition"));
     const back = () => { location.hash = ""; };
     const boardHandlers = {
       signedIn: !!user,
       load: cloud?.dailyBoard ? async (which, n) => ({
-        rows: which === "pp" ? await cloud.ppBoard(n) : await cloud.dailyBoard(dayKey(Date.now()), n), me: user?.uid
+        rows: which === "pp" ? await cloud.ppBoard(n) : await cloud.dailyBoard(dayKey(Date.now()), n, which), me: user?.uid
       }) : null,
       place: cloud?.ppEntry && user ? async (which) => {
         const day = dayKey(Date.now());
-        const entry = which === "pp" ? await cloud.ppEntry(user.uid) : await cloud.dailyEntry(day, user.uid);
+        const entry = which === "pp" ? await cloud.ppEntry(user.uid) : await cloud.dailyEntry(day, user.uid, which);
         if (!entry) return null;
-        const p = which === "pp" ? await cloud.ppPlace(entry.pp) : await cloud.dailyPlace(day, entry.score);
+        const p = which === "pp" ? await cloud.ppPlace(entry.pp) : await cloud.dailyPlace(day, which === "dsurv" ? entry.rank : entry.score, which);
         return { ...p, entry };
       } : null
     };
-    if (page === "quotes") {
+    if (page === "edition") {
+      input.blur();
+      showEdition().then(() => window.scrollTo(0, 0));
+    } else if (page === "quotes") {
       input.blur();
       renderQuotes(statsView, {
         mine: () => myQuotes, community: () => community.list, shared: () => shared, admin: () => admin, signedIn: () => !!user, cfg,
@@ -1218,7 +1332,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       window.scrollTo(0, 0);
     } else if (page === "boards") {
       input.blur();
-      renderBoards(statsView, { ...boardHandlers, onBack: back, onDaily: () => { location.hash = ""; newTest(dailySource()); }, onSignIn: signIn });
+      renderBoards(statsView, { ...boardHandlers, onBack: back, onDaily: () => { location.hash = ""; newTest(dailySource()); }, onDailySurv: () => { location.hash = ""; newTest(dailySurvSource()); }, onSignIn: signIn });
       window.scrollTo(0, 0);
     } else if (page === "stats") {
       input.blur();
@@ -1251,4 +1365,5 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
   applyDisplay();
   newTest({ kind: "normal" });
   route();
+  checkEdition().catch(() => {});
 }

@@ -44,3 +44,30 @@ export function playErr(enabled, keyKind) {
   g.gain.setValueAtTime(0.25, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
   o.connect(g).connect(a.destination); o.start(t); o.stop(t + 0.15);
 }
+
+/** A typewriter's end-of-line bell: for milestones (a new region, a clean streak, passing your best). */
+export function playBell(enabled) {
+  if (!enabled) return;
+  const a = audio(); if (!a) return;
+  const t = a.currentTime;
+  for (const [f, v, d] of [[2093, 0.16, 1.1], [3140, 0.07, 0.7], [5230, 0.03, 0.35]]) {
+    const o = a.createOscillator(), g = a.createGain();
+    o.type = "sine"; o.frequency.value = f;
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + 0.005); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+    o.connect(g).connect(a.destination); o.start(t); o.stop(t + d + 0.05);
+  }
+}
+
+/** The finish stamp landing: a low thud with a little paper slap. */
+export function playThunk(enabled) {
+  if (!enabled) return;
+  const a = audio(); if (!a) return;
+  const t = a.currentTime, o = a.createOscillator(), g = a.createGain();
+  o.type = "sine"; o.frequency.setValueAtTime(130, t); o.frequency.exponentialRampToValueAtTime(48, t + 0.16);
+  g.gain.setValueAtTime(0.5, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+  o.connect(g).connect(a.destination); o.start(t); o.stop(t + 0.22);
+  const src = a.createBufferSource(), f = a.createBiquadFilter(), ng = a.createGain();
+  src.buffer = noise; f.type = "lowpass"; f.frequency.value = 900;
+  ng.gain.setValueAtTime(0.35, t); ng.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
+  src.connect(f).connect(ng).connect(a.destination); src.start(t); src.stop(t + 0.08);
+}

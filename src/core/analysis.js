@@ -23,6 +23,7 @@ export function analyse(session, secs) {
   const inst = new Map(), bigrams = new Map();
   let errors = 0, corrections = 0, prev = null;
   for (const k of keys) {
+    if (k.life) continue; // a survival life lost to the speed floor: not a key
     if (k.bs) { corrections++; prev = k; continue; }
     if (!k.ok) errors++;
     let I = inst.get(k.w);

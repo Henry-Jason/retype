@@ -20,6 +20,13 @@ const BOARDS = {
     empty: "Nobody's on today's board yet. Be first.",
     head: `<th class="num">#</th><th>Name</th><th class="num">Score</th><th class="num">WPM</th><th class="num">Accuracy</th><th></th>`,
     row: (r) => `<td>${esc(r.name)}</td><td class="num">${r.score.toFixed(1)}</td><td class="num">${Math.round(r.wpm)}</td><td class="num">${r.acc.toFixed(1)}%</td><td>${r.clean ? "perfect" : ""}</td>`
+  },
+  dsurv: {
+    tab: "Daily survival",
+    about: "Today's survival run, the same words for everyone: 3 lives, a 30 wpm floor, no regen. Furthest run wins, then score. Each player's first attempt of the day counts, and every life is re-checked from the keystrokes.",
+    empty: "Nobody's survived today yet. Be first.",
+    head: `<th class="num">#</th><th>Name</th><th class="num">Words</th><th class="num">WPM</th><th class="num">Accuracy</th>`,
+    row: (r) => `<td>${esc(r.name)}</td><td class="num">${r.words}</td><td class="num">${Math.round(r.wpm)}</td><td class="num">${r.acc.toFixed(1)}%</td>`
   }
 };
 
@@ -36,12 +43,13 @@ export function renderBoards(view, handlers) {
     <p class="lede">How you compare. Nothing gets on a board without the server re-checking it from the keystrokes, so every entry was typed by hand.</p>
     <div class="scard wide boardpage">
       <div class="boardhead"><div class="seg" role="tablist">${Object.entries(BOARDS).map(([k, b]) => `<button type="button" role="tab" data-board="${k}">${b.tab}</button>`).join("")}</div>
-        <div class="sactions" style="margin:0">${handlers.signedIn ? "" : `<button type="button" class="go primary" id="boardsIn">Sign in to join</button>`}<button type="button" class="go" id="boardsDaily">Type today's daily</button></div></div>
+        <div class="sactions" style="margin:0">${handlers.signedIn ? "" : `<button type="button" class="go primary" id="boardsIn">Sign in to join</button>`}<button type="button" class="go" id="boardsDaily">Type today's daily</button><button type="button" class="go" id="boardsDsurv">Today's survival run</button></div></div>
       <div class="sub" id="boardAbout"></div>
       <div id="boardBox" class="sub">Loading…</div>
     </div>`;
   view.querySelector("#boardsBack").onclick = handlers.onBack;
   view.querySelector("#boardsDaily").onclick = handlers.onDaily;
+  view.querySelector("#boardsDsurv").onclick = handlers.onDailySurv;
   view.querySelector("#boardsIn")?.addEventListener("click", handlers.onSignIn);
   const box = view.querySelector("#boardBox"), about = view.querySelector("#boardAbout"), tabs = [...view.querySelectorAll("[data-board]")];
   const show = (which) => {
@@ -53,7 +61,7 @@ export function renderBoards(view, handlers) {
   };
   for (const t of tabs) t.onclick = () => show(t.dataset.board);
   let which = "pp";
-  try { which = localStorage.getItem("retype-board") === "daily" ? "daily" : "pp"; } catch { /* fine */ }
+  try { const saved = localStorage.getItem("retype-board"); if (saved in BOARDS) which = saved; } catch { /* fine */ }
   show(which);
 }
 

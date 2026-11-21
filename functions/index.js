@@ -5,7 +5,7 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { setGlobalOptions, logger } from "firebase-functions/v2";
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
-import { boardEntry, DAY_MS } from "./board.js";
+import { boardEntry, survivalEntry, DAY_MS } from "./board.js";
 import { ppPlay, nextEntry } from "./pp.js";
 import { screenQuote, submission, existingVerdict, countToday, review, report, sharedId, SHARE_RULES, limitsFor } from "./shared/core/moderation.js";
 
@@ -27,6 +27,22 @@ export const postDaily = onDocumentCreated("users/{uid}/results/{rid}", async (e
   const out = boardEntry({ uid, rid, result, name: profile.exists ? profile.data().name : null, now: Date.now() });
   if (!out.ok) { logger.info("daily not posted", { uid, rid, reason: out.reason }); return; }
   const ref = db.doc(`boards/daily-${result.day}/entries/${uid}`);
+  await db.runTransaction(async (tx) => {
+    const cur = await tx.get(ref);
+    if (cur.exists && cur.data().at <= result.at) return; // an earlier attempt already counts
+    tx.set(ref, out.entry);
+  });
+});
+
+/** The same for the daily survival run, on its own board. */
+export const postDailySurvival = onDocumentCreated("users/{uid}/results/{rid}", async (event) => {
+  const result = event.data?.data();
+  if (!result || result.kind !== "dsurv") return;
+  const { uid, rid } = event.params;
+  const profile = await db.doc(`profiles/${uid}`).get();
+  const out = survivalEntry({ uid, rid, result, name: profile.exists ? profile.data().name : null, now: Date.now() });
+  if (!out.ok) { logger.info("daily survival not posted", { uid, rid, reason: out.reason }); return; }
+  const ref = db.doc(`boards/dsurv-${result.day}/entries/${uid}`);
   await db.runTransaction(async (tx) => {
     const cur = await tx.get(ref);
     if (cur.exists && cur.data().at <= result.at) return; // an earlier attempt already counts
@@ -94,7 +110,7 @@ export const renameOnBoards = onDocumentWritten("profiles/{uid}", async (event) 
   const { uid } = event.params;
   const days = [0, 1].map((n) => new Date(Date.now() - n * DAY_MS).toISOString().slice(0, 10));
   const quotes = await db.collection("quotes").where("uid", "==", uid).get();
-  const refs = [ppRef(uid), ...days.map((day) => db.doc(`boards/daily-${day}/entries/${uid}`)), ...quotes.docs.map((d) => d.ref)];
+  const refs = [ppRef(uid), ...days.flatMap((day) => ["daily", "dsurv"].map((b) => db.doc(`boards/${b}-${day}/entries/${uid}`))), ...quotes.docs.map((d) => d.ref)];
   await Promise.all(refs.map(async (ref) => {
     const snap = await ref.get();
     if (snap.exists && snap.data().name !== name) await ref.update({ name });

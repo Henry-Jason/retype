@@ -4,10 +4,10 @@ import { score, dayKey } from "./progress.js";
 
 export const RESULT_VERSION = 1;
 
-/** Pack the keystroke log: [word, pos, typedChar, ok, ms, flags]. flags: 1 = space/line end, 2 = backspace. */
+/** Pack the keystroke log: [word, pos, typedChar, ok, ms, flags]. flags: 1 = space/line end, 2 = backspace, 4 = a survival life lost to the speed floor. */
 export function packKeys(keys) {
-  return keys.map((k) => k.bs
-    ? [-1, -1, "", 0, Math.round((k.at ?? 0) * 1000), 2]
+  return keys.map((k) => k.bs || k.life
+    ? [-1, -1, "", 0, Math.round((k.at ?? 0) * 1000), k.life ? 4 : 2]
     : [k.w, k.pos, k.ch, k.ok ? 1 : 0, Math.round(k.at * 1000), k.space ? 1 : 0]);
 }
 

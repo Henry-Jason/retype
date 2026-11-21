@@ -23,7 +23,7 @@ service cloud.firestore {
 
     match /users/{uid} {
       function validAccount(d) {
-        return d.keys().hasOnly(['v', 'bests', 'weak', 'days', 'bestStreak', 'totals', 'folded', 'xp', 'top', 'name', 'updated'])
+        return d.keys().hasOnly(['v', 'bests', 'weak', 'days', 'bestStreak', 'totals', 'folded', 'xp', 'top', 'feats', 'name', 'updated'])
           && d.v is int
           && d.bests is map
           && d.weak is map
@@ -33,6 +33,7 @@ service cloud.firestore {
           && (!('folded' in d) || (d.folded is list && d.folded.size() <= 300))
           && (!('xp' in d) || (d.xp is number && d.xp >= 0))
           && (!('top' in d) || (d.top is list && d.top.size() <= 100))
+          && (!('feats' in d) || (d.feats is map && d.feats.size() <= 200))
           && (!('name' in d) || (d.name is string && d.name.size() <= 40));
       }
 
@@ -59,7 +60,7 @@ service cloud.firestore {
           return d.id == rid
             && d.userId == uid
             && d.at is int
-            && d.kind in ['normal', 'mix', 'practice', 'code', 'daily', 'challenge', 'quote']
+            && d.kind in ['normal', 'mix', 'practice', 'code', 'daily', 'challenge', 'quote', 'dsurv']
             && d.wpm is number && d.wpm >= 0 && d.wpm < 1000
             && d.acc is number && d.acc >= 0 && d.acc <= 100
             && d.keys is string && d.keys.size() < 500000

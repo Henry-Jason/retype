@@ -459,3 +459,86 @@ details summary{cursor:pointer;color:var(--ink)}
 @keyframes lifelost{30%{color:var(--desk-pencil);transform:scale(1.25)}}
 @keyframes lifegain{30%{color:var(--ok, #2e7d32);transform:scale(1.2)}}
 .receipt .r.void{font-weight:700}
+
+/* game feel: a clean streak warms the pencil; milestones pulse; the stamp lands with a jolt */
+.stage.heat1 #pencil{box-shadow:0 0 6px color-mix(in srgb,var(--pencil) 45%,transparent)}
+.stage.heat2 #pencil{box-shadow:0 0 10px color-mix(in srgb,var(--pencil) 65%,transparent),0 0 2px var(--pencil)}
+.stage.heat3 #pencil{box-shadow:0 0 16px var(--pencil),0 0 4px var(--pencil);animation:glow 1.2s ease-in-out infinite alternate}
+@keyframes glow{to{box-shadow:0 0 22px var(--pencil),0 0 6px var(--pencil)}}
+.stat b.mile{animation:mile .22s}
+@keyframes mile{40%{color:var(--desk-pencil);transform:scale(1.3)}}
+.w.rstart.reached::before{color:var(--pencil);animation:reached .35s cubic-bezier(.2,1.5,.45,1)}
+@keyframes reached{from{transform:scale(1.8) rotate(-6deg);opacity:0}}
+.w.ghost{position:relative}
+.w.ghost::after{content:"▲ " attr(data-ghost);position:absolute;left:0;top:calc(100% + .35em);font:700 11px/1 system-ui,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:var(--pencil);white-space:nowrap;pointer-events:none}
+.page .w.ghost::after{top:auto;bottom:calc(var(--fs) * .05)}
+.w.ghost.beaten::after{content:"✓ passed your best";opacity:.6}
+#survToBest.close{color:var(--desk-pencil);font-weight:700}
+.note.close{color:var(--desk-pencil);font-weight:600}
+.stamps{display:flex;align-items:center;gap:18px}
+.seal{width:92px;height:92px;border-radius:50%;display:grid;place-items:center;flex:none;
+  background:radial-gradient(circle at 35% 30%,#f3d77a,#c9971f 60%,#8a6410);box-shadow:inset 0 0 0 4px rgba(255,255,255,.25),inset 0 0 0 7px rgba(0,0,0,.12),0 3px 8px rgba(0,0,0,.25);
+  transform:rotate(9deg);animation:seal .4s .3s cubic-bezier(.2,1.5,.45,1) both}
+.seal span{font:800 13px/1.05 var(--ui);letter-spacing:.14em;text-transform:uppercase;color:#5a3f05;text-shadow:0 1px 0 rgba(255,255,255,.45);text-align:center;max-width:70px}
+@keyframes seal{from{transform:rotate(9deg) scale(0);opacity:0}}
+#done.slam .doneIn{animation:jolt .18s .22s}
+@keyframes jolt{30%{transform:translate(2px,3px)}60%{transform:translate(-1px,-1px)}}
+@media (prefers-reduced-motion:reduce){.seal,#done.slam .doneIn,.stage.heat3 #pencil,.w.rstart.reached::before{animation:none}}
+
+/* headlines: clippings on the finish band and in the scrapbook */
+.clips{display:flex;flex-wrap:wrap;gap:12px;margin-top:12px}
+.clips.book{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px}
+.clip{background:#f4f0e6;color:#1d1b17;padding:10px 14px 12px;box-shadow:0 1px 3px rgba(0,0,0,.18);max-width:340px;
+  transform:rotate(-.6deg);font-family:Georgia,"Times New Roman",serif;border-top:3px double #1d1b17;animation:clipin .35s cubic-bezier(.2,1.4,.45,1) both}
+.clips .clip:nth-child(2n){transform:rotate(.7deg)}
+.clip small{display:block;font:700 10px/1.4 var(--ui);letter-spacing:.16em;text-transform:uppercase;color:#7a2a20}
+.clip b{display:block;font:700 18px/1.15 Georgia,"Times New Roman",serif;margin:3px 0 4px}
+.clip span{display:block;font-size:13px;font-style:italic;color:#4b463d}
+.clips.book .clip{max-width:none;animation:none}
+.clip.unreported{background:transparent;color:var(--desk-muted);box-shadow:none;border:1px dashed var(--desk-line);border-top:3px double var(--desk-line);transform:none}
+.clip.unreported b{color:var(--desk-line);letter-spacing:-.05em}
+.clip.unreported small,.clip.unreported span{color:var(--desk-muted)}
+@keyframes clipin{from{transform:translateY(8px) rotate(-4deg);opacity:0}}
+/* the desk: stamp ink, till-roll papers, and the locked/unlocked pickers in Settings */
+.stamp{border-color:var(--stamp,var(--pencil));color:var(--stamp,var(--pencil))}
+html[data-paper=carbon] .receipt{background:#eef2fb;color:#1f3a7a;background-image:repeating-linear-gradient(0deg,transparent 0 3px,rgba(31,58,122,.04) 3px 4px)}
+html[data-paper=ticker] .receipt{background:#fbf3cf;color:#3d3220}
+html[data-paper=newsprint] .receipt{background:#ebe7dc;color:#22201c;font-family:Georgia,"Times New Roman",serif}
+@media (prefers-color-scheme: dark){html:not([data-rt-theme=light])[data-paper=carbon] .receipt{background:#1c2540;color:#b9c9f2}
+  html:not([data-rt-theme=light])[data-paper=ticker] .receipt{background:#3a331c;color:#efe2b8}
+  html:not([data-rt-theme=light])[data-paper=newsprint] .receipt{background:#2f2d28;color:#e6e1d4}}
+html[data-rt-theme=dark][data-paper=carbon] .receipt{background:#1c2540;color:#b9c9f2}
+html[data-rt-theme=dark][data-paper=ticker] .receipt{background:#3a331c;color:#efe2b8}
+html[data-rt-theme=dark][data-paper=newsprint] .receipt{background:#2f2d28;color:#e6e1d4}
+.seg.desk{flex-wrap:wrap}
+.seg.desk button{display:inline-flex;align-items:center;gap:6px}
+.seg.desk button:disabled{opacity:.5;cursor:not-allowed}
+.seg.desk button small{font-size:10px;opacity:.8;margin-left:2px}
+.seg.desk .sw{width:10px;height:10px;border-radius:50%;display:inline-block}
+.clip.more{text-decoration:none;background:transparent;border:1px dashed var(--desk-line);border-top:3px double var(--desk-line);color:var(--desk-ink)}
+.clip.more b{color:var(--desk-ink)}
+
+/* the weekly edition: a front page */
+.edlink{text-decoration:none;color:inherit;display:block}
+.edlink .big{font-family:Georgia,"Times New Roman",serif}
+.edition{background:#f4f0e6;color:#1d1b17;margin-top:18px;padding:26px 34px 34px;box-shadow:0 2px 10px rgba(0,0,0,.15);font-family:Georgia,"Times New Roman",serif}
+.edition .mast h1{font:900 clamp(34px,6vw,64px)/1 "Old English Text MT",Georgia,serif;text-align:center;margin:10px 0;letter-spacing:.01em;color:#1d1b17}
+.edition .rule{border-top:3px double #1d1b17}
+.edition .dateline{display:flex;justify-content:space-between;gap:12px;font:700 11px/2 var(--ui);letter-spacing:.14em;text-transform:uppercase;border-top:1px solid #1d1b17;margin-bottom:4px}
+.edition .lead{font:900 clamp(28px,4.4vw,48px)/1.05 Georgia,serif;text-transform:uppercase;margin:22px 0 8px;letter-spacing:-.01em;color:#1d1b17}
+.edition .dek{font-size:19px;font-style:italic;margin:0 0 18px;color:#3b372f}
+.edition .quiet{font-size:17px}
+.edition .cols{display:grid;grid-template-columns:repeat(3,1fr);gap:0;border-top:1px solid #1d1b17}
+.edition .cols section{padding:12px 18px;border-left:1px solid #b9b2a3}
+.edition .cols section:first-child{border-left:0;padding-left:0}
+.edition h3{font:800 12px/1.4 var(--ui);letter-spacing:.16em;text-transform:uppercase;margin:0 0 10px;color:#7a2a20}
+.edition .erow{display:flex;align-items:baseline;gap:8px;padding:4px 0;border-bottom:1px dotted #b9b2a3}
+.edition .erow span{flex:1}
+.edition .erow i{font:700 11px var(--ui);font-style:normal}
+.edition .erow i.up{color:#1f7a4a}.edition .erow i.down{color:#a1281f}
+.edition .wotw{font:700 34px/1.1 Georgia,serif;margin:4px 0}
+.edition small{color:#5b5548;font-size:13px}
+.edition .also{border-top:3px double #1d1b17;margin-top:18px;padding-top:10px}
+.edition .also li{font:700 17px/1.4 Georgia,serif;margin:4px 0}
+.edition .go{font-family:var(--ui)}
+@media (max-width:760px){.edition .cols{grid-template-columns:1fr}.edition .cols section{border-left:0;padding-left:0}}

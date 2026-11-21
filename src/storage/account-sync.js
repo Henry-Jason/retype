@@ -16,7 +16,7 @@
 import { mergeGuest, foldResult, mergeRecent, toCloud, fromCloud, docFrom, RECENT, defaultName } from "../core/sync.js";
 import { dayKey } from "../core/progress.js";
 
-const DOC_KEYS = ["bests", "weak", "days", "bestStreak", "totals", "xp", "top"];
+const DOC_KEYS = ["bests", "weak", "days", "bestStreak", "totals", "xp", "top", "feats"];
 
 async function saveDoc(store, doc) {
   await Promise.all(DOC_KEYS.map((k) => store.set(k, doc[k])));
@@ -34,7 +34,7 @@ export async function syncAccount({ store, cloud, uid, state, today = dayKey(Dat
   const pending = (await Promise.all(pendingIds.map((id) => store.getResult(id)))).filter(Boolean);
 
   for (const r of pending) await cloud.putResult(uid, toCloud(r, uid));
-  const local = { weak: state.weak, bestStreak: state.bestStreak, top: state.top };
+  const local = { weak: state.weak, bestStreak: state.bestStreak, top: state.top, feats: state.feats };
   const doc = docFrom(await cloud.foldAccount(uid, (cur) => mergeGuest(cur, local, pending, today)));
 
   const remote = (await cloud.recentResults(uid, RECENT)).map(fromCloud);

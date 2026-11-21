@@ -4,9 +4,10 @@ export const DEFAULTS = {
   layout: "galley", lines: 3, size: "m", font: "courier", slide: "smooth", theme: "system",
   stop: "off", backspace: "on", sudden: false, ratio: 0.4,
   list: "200", punct: false, nums: false,
-  focus: false, live: true, margin: true, roll: true, sound: "off", errSound: false,
+  focus: false, live: true, margin: true, roll: true, sound: "off", errSound: false, bell: true,
   indent: "auto",
   survLives: 3, survRegen: false, survFloor: 30,
+  pencil: "red", paper: "thermal", ink: "pencil",
   quoteFrom: "all", quoteLen: "any", quoteSource: null, quoteClean: false, quoteFavs: false
 };
 
@@ -48,6 +49,7 @@ export const SETTINGS = [
   { key: "roll", label: "Till roll while typing", help: "The receipt still prints at the end.", options: [[true, "Show"], [false, "Hide"]] },
   { key: "sound", label: "Key sound", options: [["off", "Off"], ["click", "Click"], ["type", "Typewriter"]] },
   { key: "errSound", label: "Error sound", options: [[false, "Off"], [true, "On"]] },
+  { key: "bell", label: "Milestone bell", help: "A typewriter bell for clean streaks of 25, 50 and 100, a new survival region and passing your best, and a thump when the stamp lands.", options: [[true, "On"], [false, "Off"]] },
   { section: "Quotes" },
   { key: "quoteFavs", label: "Which quotes", help: "Only the quotes you've hearted, or all of them. Heart a quote while typing it, on the results, or on the Quotes page.", options: [[false, "All"], [true, "Favourites"]], quote: true },
   { key: "quoteLen", label: "Quote length", help: "Short is up to 20 words, medium 21 to 45, long anything over.", options: [["any", "Any"], ["short", "Short"], ["medium", "Medium"], ["long", "Long"]], quote: true },

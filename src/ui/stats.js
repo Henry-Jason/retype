@@ -7,6 +7,7 @@ import { SNIPPETS } from "../core/code.js";
 import { esc, fmtDuration } from "./util.js";
 import { levelFrom, XP_RULES } from "../core/levels.js";
 import { survivalLabel } from "../core/survival.js";
+import { FEATS, headline } from "../core/feats.js";
 
 export function resultLabel(r) {
   if (r.kind === "code") return `code · ${SNIPPETS.find((s) => s.id === r.snippet)?.title || r.snippet}`;
@@ -14,7 +15,7 @@ export function resultLabel(r) {
   if (r.kind === "practice") return "practice";
   if (r.kind === "daily") return `daily · ${new Date(r.at).toLocaleDateString(undefined, { day: "numeric", month: "short" })}`;
   if (r.kind === "challenge") return `challenge · ${r.mode === "time" ? `${r.length}s` : `${r.length} words`}`;
-  if (r.mode === "survival") return ["survival", `${r.wordsDone} words`, r.surv ? survivalLabel(r.surv) : "", r.punct ? "punctuation" : "", r.nums ? "numbers" : ""].filter(Boolean).join(" · ");
+  if (r.mode === "survival") return [r.kind === "dsurv" ? `daily survival · ${new Date(r.at).toLocaleDateString(undefined, { day: "numeric", month: "short" })}` : "survival", `${r.wordsDone} words`, r.surv ? survivalLabel(r.surv) : "", r.punct ? "punctuation" : "", r.nums ? "numbers" : ""].filter(Boolean).join(" · ");
   const base = r.mode === "flow" ? "flow" : r.mode === "time" ? `${r.length}s` : `${r.length} words`;
   const extra = [r.kind === "mix" ? "mixed" : "", r.list && r.list !== "200" ? (LISTS[r.list]?.label || r.list).toLowerCase() : "", r.punct ? "punctuation" : "", r.nums ? "numbers" : "", r.sudden ? "sudden death" : ""].filter(Boolean);
   return [base, ...extra].join(" · ");
@@ -95,6 +96,17 @@ function topPlaysCard(top) {
       </ul>Plain, mixed, daily and challenge galleys of ${R.minWords}+ words count; practice, code, flow and sudden death don't. Grades go by accuracy: SS at 100%, S at 98%, A at 95%, B at 90%, C at 85%.</details></div>`;
 }
 
+/** The scrapbook: every headline you've made, newest first, and the stories still unreported. */
+function scrapbook(feats) {
+  const held = FEATS.filter((f) => feats[f.id]).sort((a, b) => feats[b.id].at - feats[a.id].at);
+  const open = FEATS.filter((f) => !feats[f.id]);
+  const clip = (f) => `<div class="clip"><small>${shortDate(feats[f.id].at)}</small><b>${esc(headline(f.id, feats[f.id]))}</b><span>${esc(f.dek)}</span></div>`;
+  const blank = (f) => `<div class="clip unreported"><small>Unreported</small><b>${"▆".repeat(3 + (f.id.length % 4))} ${"▆".repeat(2 + (f.id.length % 3))}</b><span>${esc(f.hint)}</span></div>`;
+  return `<div class="scard wide"><h2>The scrapbook</h2>
+    <div class="sub">${held.length} of ${FEATS.length} stories filed. Headlines unlock pencils, papers and inks for your desk (Settings → Desk).</div>
+    <div class="clips book">${held.map(clip).join("")}${open.map(blank).join("")}</div></div>`;
+}
+
 export function renderStats(view, state, handlers) {
   const top = state.top || [];
   const st = streak(state.days, dayKey(Date.now()));
@@ -124,6 +136,7 @@ export function renderStats(view, state, handlers) {
     <p class="lede">${handlers.account?.user ? "Everything here is saved to your account." : "Everything here is saved in this browser only."} Score is wpm × accuracy², so accuracy counts for more than speed: 80 wpm at 100% beats 100 wpm at 89%. PP adds up your best galleys, and your rank comes from it.</p>
     <div class="sgrid">
       ${accountCard(handlers.account)}
+      <a class="scard wide edlink" href="#edition"><h2>The Retype Weekly</h2><div class="big">Read this week's edition →</div><div class="sub">Your week at the desk as a front page: the numbers, your best, the word that gave you the most trouble and the headlines you made. A new one comes out every Monday.</div></a>
       ${levelCard(state.xp)}
       ${ppCard(top)}
       <div class="scard"><h2>Streak</h2><div class="big">${st.count} ${st.count === 1 ? "day" : "days"}</div>
@@ -141,6 +154,7 @@ export function renderStats(view, state, handlers) {
         <div class="sactions"><button type="button" class="go" id="statsDaily">Type today's daily</button></div></div>
       <div class="scard wide"><h2>Personal bests</h2>
         ${bestRows ? `<div class="tblwrap"><table class="tbl"><thead><tr><th>Galley</th><th class="num">Score</th><th class="num">WPM</th><th class="num">Accuracy</th><th>Set</th></tr></thead><tbody>${bestRows}</tbody></table></div>` : `<div class="sub">Each kind of galley keeps its own best.</div>`}</div>
+      ${scrapbook(state.feats || {})}
       <div class="scard wide"><h2>Words that need work</h2>
         <div class="sub">Built up over every galley you've typed. A word drops off once you've typed it cleanly and at your normal pace a few times.</div>
         ${weak.length ? `<div class="chips">${weak.map((w) => `<span>${esc(w.word)}<i>${w.trouble.toFixed(1)}</i></span>`).join("")}</div>

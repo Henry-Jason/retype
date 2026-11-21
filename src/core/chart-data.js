@@ -7,7 +7,7 @@ export const RAW_WINDOW = 10;
 export function chartData(session, secs) {
   const { keys: all, targets, typed, infinite } = session;
   const T = Math.max(secs, 0.5);
-  const keys = all.filter((k) => !k.bs && k.at != null);
+  const keys = all.filter((k) => !k.bs && !k.life && k.at != null);
   const first = new Map(), lastOf = new Map();
   for (const k of keys) { if (!first.has(k.w)) first.set(k.w, k.at); lastOf.set(k.w, k); }
   let ok = 0;
