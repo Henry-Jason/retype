@@ -25,7 +25,7 @@ import { loadQuotes, saveQuotes, loadCommunity, saveCommunity, slim, STALE, load
 import { REPORT_REASONS, isFav, favKey } from "../core/quotes.js";
 import { mergeSaved, recordChange, setFav, favKeys, sameSaved, checkSize, emptySaved } from "../core/quote-sync.js";
 import { renderQuotes } from "./quotes.js";
-import { SURVIVAL, survivalWords, regionStart, rollingWpm, loseLife, afterCleanWord, survivalOpts, survivalLabel } from "../core/survival.js";
+import { SURVIVAL, survivalWords, regionStart, rollingWpm, loseLife, costsLife, afterCleanWord, survivalOpts, survivalLabel } from "../core/survival.js";
 
 export function startApp({ cfg, store, progress, accountsEnabled = false, cloudReady = Promise.resolve(null) }) {
   const stage = $("#stage"), track = $("#track"), tape = $(".tape"), pencil = $("#pencil"), input = $("#hidden"), tag = $("#tag");
@@ -428,7 +428,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       source: { ...source, seed }, seed, rand, genOpts, targets, typed: targets.map(() => ""), werr: targets.map(() => 0),
       cur: 0, first: 0, committed: 0, infinite, flow, limit: o.mode === "time" && infinite ? o.length : null, opts: o,
       sudden: !!o.sudden && !code && !practice && !flow && !quoteMode && !survival, died: false, quote: quoteMode ? source.quote : null,
-      survival, lives: survival ? o.surv.lives : null, cleanRun: 0, commits: [], floorSince: 0, floorAt: 0, lost: { miss: 0, slow: 0 }, regained: 0,
+      survival, lives: survival ? o.surv.lives : null, charged: new Set(), cleanRun: 0, commits: [], floorSince: 0, floorAt: 0, lost: { miss: 0, slow: 0 }, regained: 0,
       startT: null, pausedTotal: 0, pauseStart: null, lastT: null, gap: false, keys: [], ended: false,
       total: 0, okKeys: 0, streak: 0, best: 0, corrections: [],
       code, snippet, lines, lineNo, tok: null, layout: code ? "page" : cfg.layout
@@ -681,7 +681,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     ok ? playKey(cfg.sound) : playErr(cfg.errSound, cfg.sound);
     placeCaret(); updateLive();
     if (!ok && test.sudden) { test.died = true; finish(t); return; }
-    if (!ok && test.survival) { hit("miss", t); if (test.ended) return; }
+    if (!ok && test.survival) { hit("miss", t, w); if (test.ended) return; }
     if (!test.infinite && w === test.targets.length - 1 && test.typed[w] === tgt) { commitWord(w); finish(t); }
   }
   function space(t) {
@@ -698,7 +698,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     commitWord(w); playKey(cfg.sound);
     if (!ok && test.sudden) { test.died = true; finish(t); return; }
     if (test.survival) {
-      if (missed) { hit("miss", t); if (test.ended) return; }
+      if (missed) { hit("miss", t, w); if (test.ended) return; }
       if (afterWord(w, t)) return;
     }
     if (!test.infinite && w === test.targets.length - 1) { finish(t); return; }
@@ -707,10 +707,12 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
   }
   /* ---------- survival ---------- */
   // A life lost: printed on the roll as a void, and the run ends at none.
-  function hit(why, t) {
+  // w: the word a mistake was in; each word costs at most one life, at its first mistake.
+  function hit(why, t, w = null) {
+    if (w != null) { if (!costsLife(test.charged, w)) return; test.charged.add(w); }
     test.lives = loseLife(test.lives); test.lost[why]++; test.cleanRun = 0;
     const r = document.createElement("div"); r.className = "r bad void";
-    r.innerHTML = `<span>VOID · ${why === "slow" ? "TOO SLOW" : "WRONG KEY"}</span><span>${test.lives} LEFT</span>`;
+    r.innerHTML = `<span>VOID · ${why === "slow" ? "TOO SLOW" : esc(test.targets[w]).toUpperCase()}</span><span>${test.lives} LEFT</span>`;
     rows.prepend(r);
     flash(liveProg, "lost");
     updateLive();
@@ -906,7 +908,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       const g = grade(r.acc);
       stamp = { cls: " grade" + (g === "SS" ? " clean" : ""), big: g, small: clean ? "perfect · no corrections" : `${r.acc.toFixed(1)}% accurate`, aria: `Grade ${g}, ${r.acc.toFixed(1)}% accuracy` };
     }
-    const lostBits = test.survival ? [test.lost.miss ? `${test.lost.miss} wrong ${test.lost.miss === 1 ? "key" : "keys"}` : "", test.lost.slow ? `${test.lost.slow} too slow` : "", test.regained ? `${test.regained} regained` : ""].filter(Boolean).join(", ") : "";
+    const lostBits = test.survival ? [test.lost.miss ? `${test.lost.miss} ${test.lost.miss === 1 ? "word" : "words"} wrong` : "", test.lost.slow ? `${test.lost.slow} too slow` : "", test.regained ? `${test.regained} regained` : ""].filter(Boolean).join(", ") : "";
     const sub = test.survival
       ? (test.died ? `Out of lives on word ${n + 1}${lostBits ? `: ${lostBits}` : ""}.` : test.committed >= SURVIVAL.maxWords ? `The roll ran out at ${n} words with ${test.lives} ${test.lives === 1 ? "life" : "lives"} left. Nothing more to type.` : `Stopped with ${test.lives} ${test.lives === 1 ? "life" : "lives"} left${lostBits ? ` (${lostBits})` : ""}.`)
       : test.died ? `Sudden death: out on word ${n}.` : clean ? "Not a mark on it." : `${marks} ${marks === 1 ? "correction" : "corrections"} marked · best clean streak ${r.best}`;

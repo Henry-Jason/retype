@@ -1,5 +1,5 @@
-// Survival: type until you run out of lives. Every wrong key costs a life (fixing it afterwards
-// doesn't give it back), the words get harder the further you go, and an optional speed floor
+// Survival: type until you run out of lives. A word costs a life the moment it gets its first
+// wrong key (more mistakes in the same word are free, and fixing it doesn't give it back), the words get harder the further you go, and an optional speed floor
 // stops a run from being won by typing slowly. Pure functions only; the desk (ui/app.js) keeps
 // the running state.
 import { genWords, decorate } from "./words.js";
@@ -14,9 +14,10 @@ export const SURVIVAL = {
 
 // Where each word list takes over. The marker above the first word of each region says so.
 export const REGIONS = [
-  { at: 0, list: "1k", label: "1K region" },
-  { at: 100, list: "5k", label: "5K region" },
-  { at: 300, list: "10k", label: "10K region" }
+  { at: 0, list: "200", label: "200 region" },
+  { at: 50, list: "1k", label: "1K region" },
+  { at: 150, list: "5k", label: "5K region" },
+  { at: 350, list: "10k", label: "10K region" }
 ];
 
 /** The region word i (0-based) belongs to. */
@@ -67,8 +68,10 @@ export function rollingWpm({ commits, lens, since = 0, sinceAt = 0, now }) {
   return chars / 5 / (secs / 60);
 }
 
-/** One key: a wrong key costs a life. Returns the lives left. */
+/** A life lost. Returns the lives left. */
 export const loseLife = (lives) => Math.max(0, lives - 1);
+/** Whether a mistake in word w costs a life: only the first one in each word does. */
+export const costsLife = (charged, w) => !charged.has(w);
 
 /** After a clean word: whether regen gives a life back, and the clean run after it. */
 export function afterCleanWord({ lives, max, run, regen }) {

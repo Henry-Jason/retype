@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { mulberry32 } from "../src/core/rng.js";
 import { LISTS } from "../src/core/words.js";
-import { SURVIVAL, REGIONS, regionAt, regionStart, survivalWords, rollingWpm, loseLife, afterCleanWord, survivalOpts, survivalLabel } from "../src/core/survival.js";
+import { SURVIVAL, REGIONS, regionAt, regionStart, survivalWords, rollingWpm, loseLife, costsLife, afterCleanWord, survivalOpts, survivalLabel } from "../src/core/survival.js";
 import { modeKey, updateBests } from "../src/core/progress.js";
 import { countsForPp, difficulty } from "../src/core/pp.js";
 import { bestLabel, resultLabel } from "../src/ui/stats.js";
@@ -28,26 +28,28 @@ describe("the 10k list", () => {
 });
 
 describe("regions", () => {
-  it("starts on the top 1,000 and works up to the top 10,000", () => {
-    expect(regionAt(0).list).toBe("1k");
-    expect(regionAt(99).list).toBe("1k");
-    expect(regionAt(100).list).toBe("5k");
-    expect(regionAt(299).list).toBe("5k");
-    expect(regionAt(300).list).toBe("10k");
+  it("starts on the top 200 and works up to the top 10,000", () => {
+    expect(regionAt(0).list).toBe("200");
+    expect(regionAt(49).list).toBe("200");
+    expect(regionAt(50).list).toBe("1k");
+    expect(regionAt(149).list).toBe("1k");
+    expect(regionAt(150).list).toBe("5k");
+    expect(regionAt(349).list).toBe("5k");
+    expect(regionAt(350).list).toBe("10k");
     expect(regionAt(5000).list).toBe("10k");
   });
   it("marks only the first word of each region", () => {
-    expect(REGIONS.map((r) => regionStart(r.at))).toEqual(["1K region", "5K region", "10K region"]);
+    expect(REGIONS.map((r) => regionStart(r.at))).toEqual(["200 region", "1K region", "5K region", "10K region"]);
     expect(regionStart(1)).toBe(null);
-    expect(regionStart(101)).toBe(null);
+    expect(regionStart(151)).toBe(null);
   });
   it("draws each word from its region's list, without punctuation or numbers by default", () => {
-    const w = survivalWords(0, 400, { rand: mulberry32(3) });
-    expect(w).toHaveLength(400);
-    const k1 = new Set(LISTS["1k"].words), k5 = new Set(LISTS["5k"].words), k10 = new Set(LISTS["10k"].words);
+    const w = survivalWords(0, 450, { rand: mulberry32(3) });
+    expect(w).toHaveLength(450);
+    const k0 = new Set(LISTS["200"].words), k1 = new Set(LISTS["1k"].words), k5 = new Set(LISTS["5k"].words), k10 = new Set(LISTS["10k"].words);
     w.forEach((x, i) => {
       expect(x).toMatch(/^[a-z]+$/);
-      expect((i < 100 ? k1 : i < 300 ? k5 : k10).has(x)).toBe(true);
+      expect((i < 50 ? k0 : i < 150 ? k1 : i < 350 ? k5 : k10).has(x)).toBe(true);
     });
     for (let i = 1; i < w.length; i++) expect(w[i]).not.toBe(w[i - 1]);
   });
@@ -55,7 +57,7 @@ describe("regions", () => {
     const rand = mulberry32(5), first = survivalWords(0, 80, { rand });
     const more = survivalWords(80, 50, { rand, prev: first[79] });
     expect(more[0]).not.toBe(first[79]);
-    expect(new Set(LISTS["5k"].words).has(more[30])).toBe(true); // word 110
+    expect(new Set(LISTS["1k"].words).has(more[30])).toBe(true); // word 110
   });
   it("is the same run for the same seed", () => {
     expect(survivalWords(0, 150, { rand: mulberry32(9) })).toEqual(survivalWords(0, 150, { rand: mulberry32(9) }));
@@ -68,9 +70,16 @@ describe("regions", () => {
 });
 
 describe("lives", () => {
-  it("loses one a key and never goes below none", () => {
+  it("loses one at a time and never goes below none", () => {
     expect(loseLife(3)).toBe(2);
     expect(loseLife(0)).toBe(0);
+  });
+  it("charges each word once, at its first mistake", () => {
+    const charged = new Set();
+    expect(costsLife(charged, 4)).toBe(true);
+    charged.add(4);
+    expect(costsLife(charged, 4)).toBe(false);
+    expect(costsLife(charged, 5)).toBe(true);
   });
   it("gives one back after 50 clean words with regen on, up to the start", () => {
     let s = { lives: 2, run: 0 };
