@@ -542,11 +542,11 @@ html[data-rt-theme=dark][data-paper=newsprint] .receipt{background:#2f2d28;color
 @media (max-width:760px){.edition .cols{grid-template-columns:1fr}.edition .cols section{border-left:0;padding-left:0}}
 
 /* the progress line along the foot of the paper, coloured by pace against your best */
-.pace{position:absolute;left:0;right:0;bottom:0;height:3px;pointer-events:none;z-index:2}
-.pace i{display:block;height:100%;background:var(--desk-muted);opacity:.35;transform-origin:left;transition:transform .12s linear,background-color .6s,opacity .6s}
-.pace[data-pace=ahead] i{background:#2e9d62;opacity:.75}
-.pace[data-pace=behind] i{background:var(--pencil);opacity:.6}
-.pace[data-pace=even] i{background:#c9971f;opacity:.7}
+.pace{position:absolute;left:0;right:0;bottom:0;height:5px;pointer-events:none;z-index:2}
+.pace i{display:block;height:100%;background:var(--desk-ink);opacity:.4;transform-origin:left;transition:transform .12s linear,background-color .6s,opacity .6s}
+.pace[data-pace=ahead] i{background:#2e9d62;opacity:.95}
+.pace[data-pace=behind] i{background:var(--pencil);opacity:.85}
+.pace[data-pace=even] i{background:#c9971f;opacity:.95}
 body.hide-pace .pace,body.ended .pace{display:none}
-body.focus.typing-now .pace{opacity:.6}
+body.focus.typing-now .pace{opacity:.75}
 @media (prefers-reduced-motion:reduce){.pace i{transition:none}}
