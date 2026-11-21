@@ -586,7 +586,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       liveProg.classList.toggle("dip", test.lives === 1 && max > 1);
       const sw = $("#survWords"); if (sw) sw.textContent = test.committed;
       const tb = $("#survToBest");
-      if (tb) { const left = test.ghost - test.committed + 1; tb.textContent = test.beatGhost ? "past your best" : left <= 20 ? `${left} to your best` : `best ${test.ghost}`; tb.classList.toggle("close", !test.beatGhost && left <= 20); }
+      if (tb) { const left = test.ghost - test.committed + 1; tb.textContent = test.beatGhost ? "past your best" : left <= 20 ? `${left} to beat your best` : `best ${test.ghost}`; tb.classList.toggle("close", !test.beatGhost && left <= 20); }
     } else if (test.flow) {
       progLabel.textContent = "Time";
       liveProg.textContent = clock(Math.floor(elapsed()));
@@ -605,9 +605,12 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     for (; i < test.targets.length; i++) {
       const el = document.createElement("span"); el.className = "w";
       const region = test.survival ? regionStart(i) : null;
-      if (region) { el.classList.add("rstart"); el.dataset.region = region; }
-      if (test.ghost != null && i === test.ghost) { el.classList.add("ghost"); el.dataset.ghost = `your best · ${test.ghost}`; }
+      if (region) el.classList.add("rstart");
+      if (test.ghost != null && i === test.ghost) el.classList.add("ghost");
       for (const ch of test.targets[i]) { const s = document.createElement("span"); s.className = "l"; s.textContent = ch; el.appendChild(s); }
+      // the labels live on the first letter (see styles.css)
+      if (region) el.firstChild.dataset.region = region;
+      if (test.ghost != null && i === test.ghost) el.firstChild.dataset.ghost = `your best · ${test.ghost}`;
       wordEls[i] = el; frag.appendChild(el);
     }
     track.appendChild(frag);

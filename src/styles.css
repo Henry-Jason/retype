@@ -451,9 +451,9 @@ details summary{cursor:pointer;color:var(--ink)}
 .favbtn svg{width:12px;height:12px}
 
 /* survival: a label above the first word of each word-list region, and the lives counter */
-.w.rstart{position:relative}
-.w.rstart::before{content:attr(data-region);position:absolute;left:0;bottom:calc(100% + .45em);font:600 11px/1 system-ui,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:var(--desk-muted);white-space:nowrap;border-left:2px solid var(--pencil);padding:2px 0 2px 6px;pointer-events:none}
-.page .w.rstart::before{bottom:auto;top:calc(var(--fs) * .05)}
+/* hung off the word's first letter (already positioned), never the word: positioning the word
+   would change what its letters are measured against and throw the caret off */
+.w.rstart>.l:first-child::before{content:attr(data-region);position:absolute;left:0;bottom:calc(100% + .45em);font:600 11px/1 system-ui,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:var(--desk-muted);white-space:nowrap;border-left:2px solid var(--pencil);padding:2px 0 2px 6px;pointer-events:none}
 .stat b.lost{animation:lifelost .22s}
 .stat b.gain{animation:lifegain .22s}
 @keyframes lifelost{30%{color:var(--desk-pencil);transform:scale(1.25)}}
@@ -467,12 +467,10 @@ details summary{cursor:pointer;color:var(--ink)}
 @keyframes glow{to{box-shadow:0 0 22px var(--pencil),0 0 6px var(--pencil)}}
 .stat b.mile{animation:mile .22s}
 @keyframes mile{40%{color:var(--desk-pencil);transform:scale(1.3)}}
-.w.rstart.reached::before{color:var(--pencil);animation:reached .35s cubic-bezier(.2,1.5,.45,1)}
+.w.rstart.reached>.l:first-child::before{color:var(--pencil);animation:reached .35s cubic-bezier(.2,1.5,.45,1)}
 @keyframes reached{from{transform:scale(1.8) rotate(-6deg);opacity:0}}
-.w.ghost{position:relative}
-.w.ghost::after{content:"▲ " attr(data-ghost);position:absolute;left:0;top:calc(100% + .35em);font:700 11px/1 system-ui,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:var(--pencil);white-space:nowrap;pointer-events:none}
-.page .w.ghost::after{top:auto;bottom:calc(var(--fs) * .05)}
-.w.ghost.beaten::after{content:"✓ passed your best";opacity:.6}
+.w.ghost>.l:first-child::after{content:"▲ " attr(data-ghost);position:absolute;left:0;top:calc(100% + .35em);font:700 11px/1 system-ui,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:var(--pencil);white-space:nowrap;pointer-events:none}
+.w.ghost.beaten>.l:first-child::after{content:"✓ passed your best";opacity:.6}
 #survToBest.close{color:var(--desk-pencil);font-weight:700}
 .note.close{color:var(--desk-pencil);font-weight:600}
 .stamps{display:flex;align-items:center;gap:18px}
@@ -483,7 +481,7 @@ details summary{cursor:pointer;color:var(--ink)}
 @keyframes seal{from{transform:rotate(9deg) scale(0);opacity:0}}
 #done.slam .doneIn{animation:jolt .18s .22s}
 @keyframes jolt{30%{transform:translate(2px,3px)}60%{transform:translate(-1px,-1px)}}
-@media (prefers-reduced-motion:reduce){.seal,#done.slam .doneIn,.stage.heat3 #pencil,.w.rstart.reached::before{animation:none}}
+@media (prefers-reduced-motion:reduce){.seal,#done.slam .doneIn,.stage.heat3 #pencil,.w.rstart.reached>.l:first-child::before{animation:none}}
 
 /* headlines: clippings on the finish band and in the scrapbook */
 .clips{display:flex;flex-wrap:wrap;gap:12px;margin-top:12px}
