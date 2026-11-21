@@ -122,3 +122,18 @@ export function topWeak(profile, n = 10, min = 0.25) {
     .slice(0, n)
     .map(([word, v]) => ({ word, ...v }));
 }
+
+/* ---------- pace against your best ---------- */
+
+/**
+ * Whether a galley in progress is on course to beat your best: "ahead", "behind" or "even"
+ * (within 2% either way), or null with no best yet or too little typed to tell (under 3 seconds
+ * or 5 words). The live score uses the same formula as the finished one.
+ */
+export function paceVsBest({ wpm, acc, best, secs, words }) {
+  if (best == null || !(best > 0) || secs < 3 || words < 5) return null;
+  const now = score(wpm, acc);
+  if (now > best * 1.02) return "ahead";
+  if (now < best * 0.98) return "behind";
+  return "even";
+}

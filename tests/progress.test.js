@@ -108,3 +108,17 @@ describe("weak-word profile", () => {
     expect(topWeak(p, 2).map((x) => x.word)).toEqual(["b", "c"]);
   });
 });
+
+import { paceVsBest } from "../src/core/progress.js";
+describe("pace against your best", () => {
+  it("needs a best and a few seconds and words to say anything", () => {
+    expect(paceVsBest({ wpm: 80, acc: 100, best: null, secs: 10, words: 10 })).toBe(null);
+    expect(paceVsBest({ wpm: 80, acc: 100, best: 50, secs: 2, words: 10 })).toBe(null);
+    expect(paceVsBest({ wpm: 80, acc: 100, best: 50, secs: 10, words: 4 })).toBe(null);
+  });
+  it("compares the live score, with a 2% band for even", () => {
+    expect(paceVsBest({ wpm: 60, acc: 100, best: 50, secs: 10, words: 10 })).toBe("ahead");
+    expect(paceVsBest({ wpm: 60, acc: 90, best: 50, secs: 10, words: 10 })).toBe("behind"); // 48.6
+    expect(paceVsBest({ wpm: 50.5, acc: 100, best: 50, secs: 10, words: 10 })).toBe("even");
+  });
+});

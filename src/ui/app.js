@@ -6,7 +6,7 @@ import { analyse, describe } from "../core/analysis.js";
 import { chartData } from "../core/chart-data.js";
 import { SNIPPETS, scriptLines } from "../core/code.js";
 import { buildResult } from "../core/result.js";
-import { streak, dayKey, topWeak, score, modeKey } from "../core/progress.js";
+import { streak, dayKey, topWeak, score, modeKey, paceVsBest } from "../core/progress.js";
 import { rankFrom, grade } from "../core/pp.js";
 import { encodeChallenge, decodeChallenge, dailySeed, compare, DAILY } from "../core/challenge.js";
 import { record, emptyState, loadProgress } from "../storage/progress-service.js";
@@ -141,7 +141,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     if (ink.color) root.style.setProperty("--stamp", dark ? ink.dark : ink.color); else root.style.removeProperty("--stamp");
     root.dataset.paper = chosen("paper", cfg.paper, have).id;
     const b = document.body.classList;
-    b.toggle("hide-live", !cfg.live); b.toggle("hide-margin", !cfg.margin); b.toggle("hide-roll", !cfg.roll); b.toggle("focus", cfg.focus);
+    b.toggle("hide-live", !cfg.live); b.toggle("hide-margin", !cfg.margin); b.toggle("hide-roll", !cfg.roll); b.toggle("hide-pace", !cfg.paceLine); b.toggle("focus", cfg.focus);
     if (!cfg.focus) b.remove("typing-now");
   }
   const fmtPp = (x) => Math.round(x).toLocaleString("en-IE");
@@ -496,6 +496,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     stage.classList.toggle("page", test.layout === "page");
     stage.classList.toggle("code", code);
     stage.classList.remove("heat1", "heat2", "heat3");
+    if (!$("#pace")) stage.insertAdjacentHTML("beforeend", `<div id="pace" class="pace" aria-hidden="true"><i></i></div>`);
     document.documentElement.style.setProperty("--fs", FS[test.layout][cfg.size] + "px");
     wordEls = []; track.replaceChildren();
     if (test.layout === "page") track.appendChild(pencil); else stage.appendChild(pencil);
@@ -503,6 +504,10 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     code ? renderCode() : renderFrom(0);
     during.hidden = false; after.hidden = true;
     pencil.classList.add("idle");
+    // the best to pace against: same kind of galley (only ordinary ones keep bests)
+    test.paceBest = !code && !quoteMode && !practice && !survival && !flow && source.kind === "normal"
+      ? state.bests[modeKey({ kind: "normal", mode: o.mode, length: o.mode === "time" ? o.length : targets.length, list: o.list, punct: o.punct, nums: o.nums, sudden: o.sudden })]?.score ?? null
+      : null;
     startReceipt(); renderCorrections(); renderConfig(); updateTag(); updateLive(); updateStanding();
     measure(); placeCaret(true);
     focusInput();
@@ -572,7 +577,31 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
         : `<span>${esc(s.label)}</span><button type="button" id="exitTag">Exit practice</button>`;
     $("#exitTag").onclick = () => newTest({ kind: "normal" });
   }
+  // The progress line along the paper: time left (timed), how far through (words), or how close
+  // to your best run (survival). Coloured by pace against your best, when there is one.
+  function updatePace() {
+    const el = $("#pace"); if (!el) return;
+    let frac = null, pace = null;
+    if (test.code || test.quote || test.flow || test.source.kind === "practice") frac = null;
+    else if (test.survival) {
+      if (test.ghost) { frac = Math.min(1, test.committed / (test.ghost + 1)); pace = test.beatGhost ? "ahead" : null; }
+    } else if (test.limit) frac = test.startT == null ? 1 : Math.max(0, 1 - elapsed() / test.limit);
+    else if (!test.infinite) frac = test.committed / test.targets.length;
+    if (frac == null) { el.hidden = true; return; }
+    el.hidden = false;
+    if (!test.survival && test.paceBest != null && test.startT != null) {
+      // live score: correct words (and their spaces) per minute, times accuracy squared
+      const secs = Math.max(elapsed(), 0.001);
+      let chars = 0;
+      for (let w = 0; w < test.committed; w++) if (test.typed[w] === test.targets[w]) chars += test.targets[w].length + 1;
+      pace = paceVsBest({ wpm: chars / 5 / (secs / 60), acc: test.total ? (test.okKeys / test.total) * 100 : 100, best: test.paceBest, secs, words: test.committed });
+    }
+    el.firstChild.style.transform = `scaleX(${frac})`;
+    el.dataset.pace = pace || "";
+    el.title = pace === "ahead" ? "On course to beat your best" : pace === "behind" ? "Behind your best" : pace === "even" ? "Level with your best" : "";
+  }
   function updateLive() {
+    updatePace();
     const acc = test.total ? (test.okKeys / test.total) * 100 : 100;
     liveAcc.textContent = (acc === 100 ? "100" : acc.toFixed(1)) + "%";
     liveAcc.className = acc < 95 ? "dip" : "";
