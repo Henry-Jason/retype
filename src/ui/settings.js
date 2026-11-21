@@ -6,6 +6,7 @@ export const DEFAULTS = {
   list: "200", punct: false, nums: false,
   focus: false, live: true, margin: true, roll: true, sound: "off", errSound: false,
   indent: "auto",
+  survLives: 3, survRegen: false, survFloor: 30,
   quoteFrom: "all", quoteLen: "any", quoteSource: null, quoteClean: false, quoteFavs: false
 };
 
@@ -33,9 +34,13 @@ export const SETTINGS = [
   { key: "backspace", label: "Backspace", help: "Limit corrections to train getting it right first time.", options: [["on", "Anywhere"], ["word", "This word only"], ["off", "Off"]] },
   { key: "ratio", label: "Weak word share", help: "How often flagged words appear in a mixed galley.", options: [[0.25, "25%"], [0.4, "40%"], [0.6, "60%"]] },
   { section: "Words" },
-  { key: "list", label: "Word list", help: "The most common English words, from the top 200 up to the top 5,000.", options: [["200", "Top 200"], ["1k", "Top 1,000"], ["5k", "Top 5,000"]], restart: true },
+  { key: "list", label: "Word list", help: "The most common English words, from the top 200 up to the top 10,000.", options: [["200", "Top 200"], ["1k", "Top 1,000"], ["5k", "Top 5,000"], ["10k", "Top 10,000"]], restart: true },
   { key: "punct", label: "Punctuation", help: "Capitals, commas, full stops and question marks.", options: [[false, "Off"], [true, "On"]], restart: true },
   { key: "nums", label: "Numbers", options: [[false, "Off"], [true, "On"]], restart: true },
+  { section: "Survival" },
+  { key: "survLives", label: "Lives", help: "Every wrong key costs a life, even if you fix it. Each number of lives keeps its own best.", options: [[1, "1"], [3, "3"], [5, "5"], [10, "10"]], restart: true, surv: true },
+  { key: "survFloor", label: "Speed floor", help: "If your last 10 words drop below this speed, you lose a life. Stops a run being won by crawling.", options: [[0, "Off"], [20, "20"], [30, "30"], [40, "40"], [60, "60"]], restart: true, surv: true },
+  { key: "survRegen", label: "Regain lives", help: "Win a life back after 50 clean words in a row, up to what you started with. Kept apart from runs without it.", options: [[false, "Off"], [true, "On"]], restart: true, surv: true },
   { section: "While typing" },
   { key: "focus", label: "Focus mode", help: "Fade everything except the text while you type.", options: [[false, "Off"], [true, "On"]] },
   { key: "live", label: "Live stats", options: [[true, "Show"], [false, "Hide"]] },

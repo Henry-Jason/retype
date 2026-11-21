@@ -15,10 +15,11 @@ export function buildResult({ id, userId, at, session, stats, meta }) {
   return {
     id, v: RESULT_VERSION, userId, at, day: dayKey(at),
     kind: meta.kind,                 // normal | mix | practice | code
-    mode: meta.mode,                 // words | time | flow | code
+    mode: meta.mode,                 // words | time | flow | survival | code | quote | practice
     length: meta.length ?? null,     // word count or seconds
     list: meta.list ?? null, punct: !!meta.punct, nums: !!meta.nums, sudden: !!meta.sudden,
     snippet: meta.snippet ?? null, seed: meta.seed ?? null,
+    ...(meta.surv ? { surv: meta.surv } : {}), // survival: { lives, regen, floor, left }
     wpm: stats.wpm, raw: stats.raw, acc: stats.acc, score: score(stats.wpm, stats.acc),
     errors: stats.errors, fixes: stats.corrections, keyCount: stats.keys, secs: stats.secs,
     bestStreak: stats.best, wordsDone: meta.wordsDone, clean: stats.errors === 0 && stats.corrections === 0,

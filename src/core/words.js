@@ -1,12 +1,14 @@
 import W200 from "../data/words-200.js";
 import W1K from "../data/words-1k.js";
 import W5K from "../data/words-5k.js";
+import W10K from "../data/words-10k.js";
 import { pick } from "./rng.js";
 
 export const LISTS = {
   "200": { label: "Top 200", words: W200 },
   "1k": { label: "Top 1,000", words: W1K },
-  "5k": { label: "Top 5,000", words: W5K }
+  "5k": { label: "Top 5,000", words: W5K },
+  "10k": { label: "Top 10,000", words: W10K }
 };
 
 /**

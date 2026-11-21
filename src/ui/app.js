@@ -25,6 +25,7 @@ import { loadQuotes, saveQuotes, loadCommunity, saveCommunity, slim, STALE, load
 import { REPORT_REASONS, isFav, favKey } from "../core/quotes.js";
 import { mergeSaved, recordChange, setFav, favKeys, sameSaved, checkSize, emptySaved } from "../core/quote-sync.js";
 import { renderQuotes } from "./quotes.js";
+import { SURVIVAL, survivalWords, regionStart, rollingWpm, loseLife, afterCleanWord, survivalOpts, survivalLabel } from "../core/survival.js";
 
 export function startApp({ cfg, store, progress, accountsEnabled = false, cloudReady = Promise.resolve(null) }) {
   const stage = $("#stage"), track = $("#track"), tape = $(".tape"), pencil = $("#pencil"), input = $("#hidden"), tag = $("#tag");
@@ -174,7 +175,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       if (gi) sep();
       const g = document.createElement("div"); g.className = "grp";
       g.innerHTML = `<span class="lbl">${mode === "words" ? "words" : "seconds"}</span>`;
-      const active = plain && cfg.mode === mode;
+      const active = plain && !(test && test.survival) && cfg.mode === mode;
       for (const v of PRESETS[mode]) g.appendChild(btn(v, active && cfg[mode] === v, () => applyConfig(mode, v)));
       const isCustom = !PRESETS[mode].includes(cfg[mode]);
       if (editing === mode) {
@@ -199,9 +200,10 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     sep();
     const lists = document.createElement("div"); lists.className = "grp";
     lists.innerHTML = `<span class="lbl">top</span>`;
-    for (const [key, label] of [["200", "200"], ["1k", "1k"], ["5k", "5k"]]) {
-      const b = btn(label, plain && cfg.list === key, () => {
-        cfg.list = key; saveSettings(cfg);
+    const surv = !!(test && test.survival);
+    for (const [key, label] of [["200", "200"], ["1k", "1k"], ["5k", "5k"], ["10k", "10k"]]) {
+      const b = btn(label, plain && !surv && cfg.list === key, () => {
+        cfg.list = key; if (cfg.mode === "survival") cfg.mode = "words"; saveSettings(cfg);
         newTest(test && test.source.kind === "mix" ? { ...test.source, seed: undefined } : { kind: "normal" });
       });
       b.title = `${LISTS[key].label} words`;
@@ -211,10 +213,21 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     sep();
     const more = document.createElement("div"); more.className = "grp";
     more.appendChild(btn("flow", plain && cfg.mode === "flow", () => { cfg.mode = "flow"; saveSettings(cfg); newTest({ kind: "normal" }); }));
+    more.appendChild(btn("survival", surv, () => { cfg.mode = "survival"; saveSettings(cfg); newTest({ kind: "normal" }); }));
     more.appendChild(btn("python", !!(test && test.code), () => newTest({ kind: "code", idx: test && test.code ? test.source.idx : 0 })));
     more.appendChild(btn("daily", !!(test && test.source.kind === "daily"), () => newTest(dailySource())));
     more.appendChild(btn("quote", !!(test && test.quote), () => newTest(quoteSource(test?.quote?.id))));
     box.appendChild(more);
+    if (surv) {
+      // lives and regen, one click each; the speed floor is in Settings
+      const g = document.createElement("div"); g.className = "grp";
+      g.innerHTML = `<span class="lbl">lives</span>`;
+      for (const v of SURVIVAL.lives) g.appendChild(btn(String(v), test.opts.surv.lives === v, () => { cfg.survLives = v; saveSettings(cfg); newTest({ kind: "normal" }); }));
+      const r = btn("regen", test.opts.surv.regen, () => { cfg.survRegen = !cfg.survRegen; saveSettings(cfg); newTest({ kind: "normal" }); });
+      r.title = `A life back after ${SURVIVAL.regenEvery} clean words in a row`;
+      g.appendChild(r);
+      box.appendChild(g);
+    }
     if (test && test.quote) {
       const q = document.createElement("div"); q.className = "grp";
       q.innerHTML = `<span class="lbl">quote</span>`;
@@ -393,9 +406,12 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     document.body.classList.remove("ended", "typing-now");
     doneBand.hidden = true;
     const code = source.kind === "code", practice = source.kind === "practice", quoteMode = source.kind === "quote";
-    const o = source.opts || { mode: cfg.mode, length: cfg.mode === "time" ? cfg.time : cfg.words, list: cfg.list, punct: cfg.punct, nums: cfg.nums, sudden: cfg.sudden };
+    // survival is its own kind of run; a mixed galley started from it falls back to words
+    const mode = cfg.mode === "survival" && source.kind !== "normal" ? "words" : cfg.mode;
+    const o = source.opts || { mode, length: mode === "time" ? cfg.time : cfg.words, list: cfg.list, punct: cfg.punct, nums: cfg.nums, sudden: cfg.sudden, ...(mode === "survival" ? { surv: survivalOpts(cfg) } : {}) };
     const flow = !code && !practice && !quoteMode && o.mode === "flow";
-    const infinite = !code && !practice && !quoteMode && (o.mode === "time" || flow);
+    const survival = source.kind === "normal" && o.mode === "survival";
+    const infinite = !code && !practice && !quoteMode && (o.mode === "time" || flow || survival);
     const seed = source.seed ?? randomSeed(), rand = mulberry32(seed);
     const genOpts = { rand, list: o.list, weak: source.weak || null, ratio: source.ratio || 0, punct: o.punct, nums: o.nums };
     let targets, lineNo = null, snippet = null, lines = null;
@@ -406,11 +422,13 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       targets = typable.map((l) => l.target); lineNo = typable.map((l) => l.n);
     } else if (practice) targets = source.words.slice();
     else if (quoteMode) targets = quoteWords(source.quote.text);
+    else if (survival) targets = survivalWords(0, 80, { rand, punct: o.punct, nums: o.nums });
     else targets = genWords(infinite ? 80 : o.length, genOpts);
     test = {
       source: { ...source, seed }, seed, rand, genOpts, targets, typed: targets.map(() => ""), werr: targets.map(() => 0),
       cur: 0, first: 0, committed: 0, infinite, flow, limit: o.mode === "time" && infinite ? o.length : null, opts: o,
-      sudden: !!o.sudden && !code && !practice && !flow && !quoteMode, died: false, quote: quoteMode ? source.quote : null,
+      sudden: !!o.sudden && !code && !practice && !flow && !quoteMode && !survival, died: false, quote: quoteMode ? source.quote : null,
+      survival, lives: survival ? o.surv.lives : null, cleanRun: 0, commits: [], floorSince: 0, floorAt: 0, lost: { miss: 0, slow: 0 }, regained: 0,
       startT: null, pausedTotal: 0, pauseStart: null, lastT: null, gap: false, keys: [], ended: false,
       total: 0, okKeys: 0, streak: 0, best: 0, corrections: [],
       code, snippet, lines, lineNo, tok: null, layout: code ? "page" : cfg.layout
@@ -448,6 +466,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     const s = test.source;
     const extra = [];
     if (test.sudden) extra.push("sudden death");
+    if (test.survival) extra.push(`Survival · ${survivalLabel(test.opts.surv)} · <b id="survWords">${test.committed}</b> words`);
     if (test.flow) extra.push("flow: no clock, no end");
     if (s.kind === "challenge" || s.kind === "daily" || (s.kind === "code" && s.from)) {
       tag.hidden = false;
@@ -493,8 +512,15 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     liveAcc.textContent = (acc === 100 ? "100" : acc.toFixed(1)) + "%";
     liveAcc.className = acc < 95 ? "dip" : "";
     liveStreak.textContent = test.streak;
+    liveProg.classList.remove("dip");
     const clock = (s) => (s >= 60 ? `${Math.floor(s / 60)}:${pad(s % 60)}` : s);
-    if (test.flow) {
+    if (test.survival) {
+      progLabel.textContent = "Lives";
+      const max = test.opts.surv.lives;
+      liveProg.textContent = max > 5 ? `${test.lives}/${max}` : "●".repeat(test.lives) + "○".repeat(max - test.lives);
+      liveProg.classList.toggle("dip", test.lives === 1 && max > 1);
+      const sw = $("#survWords"); if (sw) sw.textContent = test.committed;
+    } else if (test.flow) {
       progLabel.textContent = "Time";
       liveProg.textContent = clock(Math.floor(elapsed()));
     } else if (test.infinite) {
@@ -511,6 +537,8 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     const frag = document.createDocumentFragment();
     for (; i < test.targets.length; i++) {
       const el = document.createElement("span"); el.className = "w";
+      const region = test.survival ? regionStart(i) : null;
+      if (region) { el.classList.add("rstart"); el.dataset.region = region; }
       for (const ch of test.targets[i]) { const s = document.createElement("span"); s.className = "l"; s.textContent = ch; el.appendChild(s); }
       wordEls[i] = el; frag.appendChild(el);
     }
@@ -568,7 +596,11 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
   }
   function ensureMore() {
     if (!test.infinite || test.cur < test.targets.length - 30) return;
-    const add = genWords(50, test.genOpts), start = test.targets.length;
+    const start = test.targets.length;
+    if (test.survival && start >= SURVIVAL.maxWords) return;
+    const add = test.survival
+      ? survivalWords(start, Math.min(50, SURVIVAL.maxWords - start), { rand: test.rand, punct: test.opts.punct, nums: test.opts.nums, prev: test.targets[start - 1] })
+      : genWords(50, test.genOpts);
     test.targets.push(...add); test.typed.push(...add.map(() => "")); test.werr.push(...add.map(() => 0));
     renderFrom(start); measure();
   }
@@ -592,7 +624,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     let dt = null;
     if (test.startT == null) {
       test.startT = t;
-      if (test.infinite) ticker = setInterval(() => { updateLive(); if (test.limit && elapsed() >= test.limit) finish(); }, 100);
+      if (test.infinite) ticker = setInterval(() => { updateLive(); if (test.limit && elapsed() >= test.limit) finish(); if (test.survival) checkFloor(); }, 100);
     } else if (!test.gap && test.lastT != null) { dt = t - test.lastT; if (dt > 2000) dt = null; }
     test.lastT = t; test.gap = false;
     pencil.classList.remove("idle");
@@ -627,7 +659,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     const w = test.cur, tgt = test.targets[w], typed = test.typed[w];
     if (typed.length >= tgt.length + 10) return;
     const pos = typed.length, exp = pos < tgt.length ? tgt[pos] : null, ok = ch === exp;
-    if (!ok && cfg.stop === "letter" && !test.sudden) {
+    if (!ok && cfg.stop === "letter" && !test.sudden && !test.survival) {
       // the miss still counts, but you can't move on until the right key
       const dt = stamp(t);
       test.keys.push({ w, pos, exp, ch, ok: false, dt, at: elapsed(t) });
@@ -649,12 +681,13 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     ok ? playKey(cfg.sound) : playErr(cfg.errSound, cfg.sound);
     placeCaret(); updateLive();
     if (!ok && test.sudden) { test.died = true; finish(t); return; }
+    if (!ok && test.survival) { hit("miss", t); if (test.ended) return; }
     if (!test.infinite && w === test.targets.length - 1 && test.typed[w] === tgt) { commitWord(w); finish(t); }
   }
   function space(t) {
     const w = test.cur, typed = test.typed[w], tgt = test.targets[w];
     if (!typed.length) return;
-    if (cfg.stop !== "off" && !test.sudden && typed !== tgt) { flash(wordEls[w], "nope"); playErr(cfg.errSound, cfg.sound); return; }
+    if (cfg.stop !== "off" && !test.sudden && !test.survival && typed !== tgt) { flash(wordEls[w], "nope"); playErr(cfg.errSound, cfg.sound); return; }
     const dt = stamp(t), ok = typed === tgt, missed = Math.max(0, tgt.length - typed.length);
     // the space itself is only a mistake when it skips letters; a wrong letter was already counted
     const keyOk = missed === 0;
@@ -664,9 +697,54 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     for (let p = typed.length; p < tgt.length; p++) setLetter(w, p, p === typed.length ? "miss gap" : "miss", tgt[p]);
     commitWord(w); playKey(cfg.sound);
     if (!ok && test.sudden) { test.died = true; finish(t); return; }
+    if (test.survival) {
+      if (missed) { hit("miss", t); if (test.ended) return; }
+      if (afterWord(w, t)) return;
+    }
     if (!test.infinite && w === test.targets.length - 1) { finish(t); return; }
     test.cur++;
     ensureMore(); maybeShift(); placeCaret(); updateLive();
+  }
+  /* ---------- survival ---------- */
+  // A life lost: printed on the roll as a void, and the run ends at none.
+  function hit(why, t) {
+    test.lives = loseLife(test.lives); test.lost[why]++; test.cleanRun = 0;
+    const r = document.createElement("div"); r.className = "r bad void";
+    r.innerHTML = `<span>VOID · ${why === "slow" ? "TOO SLOW" : "WRONG KEY"}</span><span>${test.lives} LEFT</span>`;
+    rows.prepend(r);
+    flash(liveProg, "lost");
+    updateLive();
+    if (!test.lives) { test.died = true; finish(t); }
+  }
+  // After each finished word: regen, the speed floor, and the end of the roll. True if the run ended.
+  function afterWord(w, t) {
+    test.commits[test.committed - 1] = elapsed(t);
+    test.commits.length = test.committed;
+    if (test.typed[w] === test.targets[w] && !test.werr[w]) {
+      const r = afterCleanWord({ lives: test.lives, max: test.opts.surv.lives, run: test.cleanRun, regen: test.opts.surv.regen });
+      test.cleanRun = r.run;
+      if (r.regained) {
+        test.lives = r.lives; test.regained++;
+        const row = document.createElement("div"); row.className = "r fixed";
+        row.innerHTML = `<span>REFUND · ${SURVIVAL.regenEvery} CLEAN</span><span>${test.lives} LEFT</span>`;
+        rows.prepend(row); flash(liveProg, "gain");
+      }
+    } else test.cleanRun = 0;
+    if (checkFloor(t)) return true;
+    if (test.committed >= SURVIVAL.maxWords) { finish(t); return true; }
+    return false;
+  }
+  // The speed floor: too slow over the last 10 words costs a life, then the window starts again.
+  function checkFloor(t) {
+    const floor = test.opts.surv.floor;
+    if (!floor || test.ended || test.startT == null || test.pauseStart != null) return false;
+    const now = elapsed(t);
+    const lens = test.targets.slice(0, test.committed).map((x) => x.length);
+    const wpm = rollingWpm({ commits: test.commits, lens, since: test.floorSince, sinceAt: test.floorAt, now });
+    if (wpm == null || wpm >= floor) return false;
+    test.floorSince = test.committed; test.floorAt = now;
+    hit("slow", t);
+    return test.ended;
   }
   function commitWord(w) {
     const ok = test.typed[w] === test.targets[w];
@@ -688,6 +766,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
         if (test.corrections.length && test.corrections[test.corrections.length - 1].w === pw) { test.corrections.pop(); renderCorrections(); }
         rows.firstElementChild?.remove();
         test.committed--; test.streak = 0;
+        if (test.survival) { test.commits.pop(); test.floorSince = Math.min(test.floorSince, test.commits.length); }
         playKey(cfg.sound); placeCaret(); updateLive();
       }
       return;
@@ -720,6 +799,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     if (test.source.kind === "daily") return `DAILY · ${dayLabel(test.source.day).toUpperCase()}`;
     if (test.source.kind === "challenge") return `CHALLENGE · ${test.opts.mode === "time" ? test.opts.length + " SECONDS" : test.targets.length + " WORDS"}`;
     if (test.flow) return "FLOW";
+    if (test.survival) return `SURVIVAL · ${survivalLabel(test.opts.surv).toUpperCase()}`;
     return test.infinite ? `${test.opts.length} SECONDS` : `${test.targets.length} WORDS`;
   }
   function startReceipt() {
@@ -782,7 +862,8 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       meta: {
         kind: s.kind, mode: test.code ? "code" : test.quote ? "quote" : s.kind === "practice" ? "practice" : test.flow ? "flow" : test.opts.mode,
         length: test.code || test.quote || s.kind === "practice" ? test.targets.length : test.opts.mode === "time" ? test.opts.length : test.opts.mode === "words" ? test.targets.length : null,
-        list: test.code || test.quote ? null : test.opts.list, punct: !test.code && !test.quote && !!test.opts.punct, nums: !test.code && !test.quote && !!test.opts.nums, sudden: test.sudden,
+        list: test.code || test.quote || test.survival ? null : test.opts.list,
+        surv: test.survival ? { ...test.opts.surv, left: test.lives } : null, punct: !test.code && !test.quote && !!test.opts.punct, nums: !test.code && !test.quote && !!test.opts.nums, sudden: test.sudden,
         snippet: test.code ? test.snippet.id : test.quote ? test.quote.id : null, seed: test.seed, wordsDone: test.committed
       }
     });
@@ -819,14 +900,19 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     const what = test.code ? `${test.snippet.title} · ${n} ${unit}` : `${n} ${unit}`;
     const marks = test.corrections.length;
     let stamp;
-    if (test.died) stamp = { cls: "", big: "Spiked", small: "one mistake", aria: "Spiked: sudden death ended on a mistake" };
+    if (test.survival) stamp = { cls: test.died ? "" : " grade clean", big: String(n), small: test.died ? "words survived" : test.committed >= SURVIVAL.maxWords ? "the whole roll" : "words, still standing", aria: `Survived ${n} words` };
+    else if (test.died) stamp = { cls: "", big: "Spiked", small: "one mistake", aria: "Spiked: sudden death ended on a mistake" };
     else {
       const g = grade(r.acc);
       stamp = { cls: " grade" + (g === "SS" ? " clean" : ""), big: g, small: clean ? "perfect · no corrections" : `${r.acc.toFixed(1)}% accurate`, aria: `Grade ${g}, ${r.acc.toFixed(1)}% accuracy` };
     }
-    const sub = test.died ? `Sudden death: out on word ${n}.` : clean ? "Not a mark on it." : `${marks} ${marks === 1 ? "correction" : "corrections"} marked · best clean streak ${r.best}`;
+    const lostBits = test.survival ? [test.lost.miss ? `${test.lost.miss} wrong ${test.lost.miss === 1 ? "key" : "keys"}` : "", test.lost.slow ? `${test.lost.slow} too slow` : "", test.regained ? `${test.regained} regained` : ""].filter(Boolean).join(", ") : "";
+    const sub = test.survival
+      ? (test.died ? `Out of lives on word ${n + 1}${lostBits ? `: ${lostBits}` : ""}.` : test.committed >= SURVIVAL.maxWords ? `The roll ran out at ${n} words with ${test.lives} ${test.lives === 1 ? "life" : "lives"} left. Nothing more to type.` : `Stopped with ${test.lives} ${test.lives === 1 ? "life" : "lives"} left${lostBits ? ` (${lostBits})` : ""}.`)
+      : test.died ? `Sudden death: out on word ${n}.` : clean ? "Not a mark on it." : `${marks} ${marks === 1 ? "correction" : "corrections"} marked · best clean streak ${r.best}`;
     let badges = "";
-    if (change?.isBest) badges += `<span class="pb">New best${change.previous ? ` · was ${change.previous.score.toFixed(1)}` : ""}</span>`;
+    const bestWas = (b) => (b.words != null ? `${b.words} words` : b.score.toFixed(1));
+    if (change?.isBest) badges += `<span class="pb">New best${change.previous ? ` · was ${bestWas(change.previous)}` : ""}</span>`;
     if (change?.pp != null) badges += `<span class="ppb" title="Performance points for this galley">${change.pp.toFixed(1)} PP</span>`;
     if (change?.rankUp) badges += `<span class="rankup">Now ${esc(change.rankAfter.rank.name)}</span>`;
     const levelUp = change && change.levelAfter.level > change.levelBefore.level;
@@ -834,7 +920,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     if (levelUp) badges += `<span class="pb">Level ${change.levelAfter.level}</span>`;
     let note = "";
     if (change?.xpParts?.length > 1) note += `<div class="note">${esc(change.xpParts.map(([l, x]) => `${l} +${x}`).join(" · "))}</div>`;
-    if (change?.isBest) toast(`New personal best · ${bestLabel(change.key)}: ${change.previous ? `${change.previous.score.toFixed(1)} → ` : ""}${score(r.wpm, r.acc).toFixed(1)}`, "pb");
+    if (change?.isBest) toast(`New personal best · ${bestLabel(change.key)}: ${change.previous ? `${bestWas(change.previous)} → ` : ""}${test.survival ? `${n} words` : score(r.wpm, r.acc).toFixed(1)}`, "pb");
     if (change?.rankUp) toast(`Promoted to ${change.rankAfter.rank.name} · ${Math.round(change.ppAfter)} PP`, "lv");
     if (levelUp) toast(`Level ${change.levelAfter.level}! ${change.levelAfter.need - change.levelAfter.into} XP to the next.`, "lv");
     const from = test.source.from;
@@ -857,7 +943,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     if (change?.pp != null) {
       const gain = change.ppAfter - change.ppBefore;
       note += `<div class="note">${change.inTop ? `Total ${fmtPp(change.ppAfter)} PP (+${gain.toFixed(1)}).` : `Total ${fmtPp(change.ppAfter)} PP. This one didn't make your top 100.`}</div>`;
-    } else if (change && test.source.kind === "normal" && !change.rankAfter.rank && !test.code) note += `<div class="note">Galleys of 15 words or more earn PP, and PP earns a rank.</div>`;
+    } else if (change && test.source.kind === "normal" && !change.rankAfter.rank && !test.code && !test.survival) note += `<div class="note">Galleys of 15 words or more earn PP, and PP earns a rank.</div>`;
     if (!test.committed) note = `<div class="note">Nothing finished, so this one wasn't saved.</div>`;
     doneBand.innerHTML = `<div class="wrap doneIn">
       <div><div class="eyebrow">Galley ${no} · finished</div>
@@ -881,7 +967,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       ${test.code
         ? `<div class="ticket"><small>** WHAT IT DOES **</small></div><div class="rtext">${esc(test.snippet.explain)}</div>
           <div class="dash"></div><div class="ticket"><small>** OUTPUT **</small></div><div class="rpre">${esc(test.snippet.output)}</div>`
-        : `${test.quote && (test.quote.by || test.quote.source) ? `<div class="rtext attr">- ${esc([test.quote.by, test.quote.source].filter(Boolean).join(", "))}</div><div class="dash"></div>` : ""}<div class="ticket"><small>** NEXT TICKET **</small><b>${r.weak.length ? esc(r.weak.slice(0, 5).map((w) => w.word).join(" · ")) : "nothing to practise"}</b></div>`}
+        : `${test.survival ? `<div class="r"><span>LIVES LEFT</span><span>${test.lives}/${test.opts.surv.lives}</span></div><div class="dash"></div>${test.died ? `<div class="ticket"><small>** TRANSACTION TERMINATED **</small></div><div class="dash"></div>` : ""}` : ""}${test.quote && (test.quote.by || test.quote.source) ? `<div class="rtext attr">- ${esc([test.quote.by, test.quote.source].filter(Boolean).join(", "))}</div><div class="dash"></div>` : ""}<div class="ticket"><small>** NEXT TICKET **</small><b>${r.weak.length ? esc(r.weak.slice(0, 5).map((w) => w.word).join(" · ")) : "nothing to practise"}</b></div>`}
       <div class="barcode"></div>`);
     receipt.classList.add("done");
     receipt.scrollTop = 0;
@@ -895,7 +981,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     </div>
     <div class="panel"><h2>Speed</h2><div class="legend" id="legend"></div><div class="chart" id="chart"></div></div>`;
   const challengeCard = () => {
-    const ok = test.code || test.quote || ((test.source.kind === "normal" || test.source.kind === "challenge" || test.source.kind === "daily") && !test.flow);
+    const ok = test.code || test.quote || ((test.source.kind === "normal" || test.source.kind === "challenge" || test.source.kind === "daily") && !test.flow && !test.survival);
     if (!ok || !test.committed) return "";
     let name = "";
     try { name = localStorage.getItem("retype-name") || ""; } catch { /* fine */ }
@@ -919,7 +1005,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     const drill = pairDrill(r.pairs.map((p) => p.bg), { rand: mulberry32(randomSeed()), list: cfg.list === "200" ? "1k" : cfg.list });
     // the mix draws on everything you've typed, with this galley's trouble words first
     const mixWords = [...new Set([...r.weak.map((w) => w.word), ...topWeak(state.weak, 12).map((w) => w.word)])].slice(0, 12);
-    const modeLabel = cfg.mode === "words" ? `${cfg.words}-word` : cfg.mode === "time" ? `${cfg.time}-second` : "flow";
+    const modeLabel = cfg.mode === "words" ? `${cfg.words}-word` : cfg.mode === "time" ? `${cfg.time}-second` : cfg.mode === "survival" ? `${cfg.words}-word` : "flow";
     const q = test.quote;
     const canReport = q && q.community && !shared.has(q.id);
     const quotePanel = q ? `<div class="panel"><h2>The quote</h2><p class="quoteblock">${esc(q.text)}</p>${q.by || q.source ? `<div class="quoteby">- ${esc([q.by, q.source].filter(Boolean).join(", "))}${q.community && q.name ? ` · added by ${esc(q.name)}` : ""}</div>` : ""}
@@ -930,7 +1016,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       ? `<div class="card"><h3>Next quote</h3><p>Another ${cfg.quoteLen === "any" ? "" : cfg.quoteLen + " "}quote at random.</p><button class="go" id="btnNext">Start <kbd>tab</kbd></button></div>
          <div class="card"><h3>Type it again</h3><p>The same quote, now you know where it bites.</p><button class="go" id="btnAgain">Start <kbd>esc</kbd></button></div>
          ${keepable ? `<div class="card"><h3>Keep this quote</h3><p>Add it to your own quotes.</p><button class="go" id="btnKeep">Add to yours</button></div>` : ""}`
-      : `<div class="card"><h3>Next galley</h3><p>${test.source.kind === "mix" ? "Another mixed galley, same weak words." : `A fresh ${modeLabel} galley.`}</p>
+      : `<div class="card"><h3>Next galley</h3><p>${test.source.kind === "mix" ? "Another mixed galley, same weak words." : test.survival ? `Another survival run, ${esc(survivalLabel(test.opts.surv))}.` : `A fresh ${modeLabel} galley.`}</p>
           <button class="go" id="btnNext">Start <kbd>tab</kbd></button></div>`;
     during.hidden = true; after.hidden = false;
     after.innerHTML = `
@@ -1009,7 +1095,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       || `<div class="empty">Not enough key pairs yet.</div>`;
     const cleanLines = test.targets.filter((t, w) => test.werr[w] === 0 && test.typed[w] === t).length;
     const nextTitle = SNIPPETS[(test.source.idx + 1) % SNIPPETS.length].title;
-    const modeLabel = cfg.mode === "words" ? `${cfg.words}-word` : cfg.mode === "time" ? `${cfg.time}-second` : "flow";
+    const modeLabel = cfg.mode === "words" ? `${cfg.words}-word` : cfg.mode === "time" ? `${cfg.time}-second` : cfg.mode === "survival" ? `${cfg.words}-word` : "flow";
     during.hidden = true; after.hidden = false;
     after.innerHTML = `
       <div class="sheet">

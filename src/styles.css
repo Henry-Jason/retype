@@ -449,3 +449,13 @@ details summary{cursor:pointer;color:var(--ink)}
 .qpanelacts{display:flex;gap:8px;align-items:center;margin-top:10px}
 .favbtn{display:inline-flex;gap:4px;align-items:center}
 .favbtn svg{width:12px;height:12px}
+
+/* survival: a label above the first word of each word-list region, and the lives counter */
+.w.rstart{position:relative}
+.w.rstart::before{content:attr(data-region);position:absolute;left:0;bottom:calc(100% + .45em);font:600 11px/1 system-ui,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:var(--desk-muted);white-space:nowrap;border-left:2px solid var(--pencil);padding:2px 0 2px 6px;pointer-events:none}
+.page .w.rstart::before{bottom:auto;top:calc(var(--fs) * .05)}
+.stat b.lost{animation:lifelost .22s}
+.stat b.gain{animation:lifegain .22s}
+@keyframes lifelost{30%{color:var(--desk-pencil);transform:scale(1.25)}}
+@keyframes lifegain{30%{color:var(--ok, #2e7d32);transform:scale(1.2)}}
+.receipt .r.void{font-weight:700}

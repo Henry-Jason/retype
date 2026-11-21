@@ -7,7 +7,7 @@
 // working from the words actually typed rather than the settings the browser claims.
 import W200 from "../data/words-200.js";
 import W1K from "../data/words-1k.js";
-import W5K from "../data/words-5k.js";
+import W10K from "../data/words-10k.js";
 
 export const PP_RULES = {
   base: 100,          // 100 wpm, 100%, average top-1,000 words, 50 words long → 100 PP
@@ -48,11 +48,13 @@ export const countsForPp = (r) =>
 
 /* ---------- how hard the words were ---------- */
 
-// Frequency rank of every word Retype can give you. The 5k list is in frequency order; the odd
-// hand-picked word that isn't in it counts as rare.
-const RANK = new Map(W5K.map((w, i) => [w, i]));
-for (const w of [...W1K, ...W200]) if (!RANK.has(w)) RANK.set(w, W5K.length);
-// Calibrated so the average word of each list gives top 200 ≈ 0.85, top 1,000 ≈ 1.0, top 5,000 ≈ 1.2.
+// Frequency rank of every word Retype can give you. The 10k list is in frequency order and starts
+// with the whole 5k list, so a top-5,000 word has the same rank it always had; the odd hand-picked
+// word that isn't in it counts as rare.
+const RANK = new Map(W10K.map((w, i) => [w, i]));
+for (const w of [...W1K, ...W200]) if (!(RANK.get(w) < 5000)) RANK.set(w, 5000); // as before 10k existed
+// Calibrated so the average word of each list gives top 200 ≈ 0.85, top 1,000 ≈ 1.0, top 5,000 ≈ 1.2
+// (and, from the same curve, top 10,000 ≈ 1.28).
 const wordDiff = (rank) => 0.267 + 0.0858 * Math.log2(rank + 2);
 const NUMBER_DIFF = 1.1;
 

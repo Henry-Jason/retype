@@ -20,6 +20,11 @@ export function modeKey(r) {
   if (r.kind === "code") return `code:${r.snippet}`;
   if (r.kind === "quote") return `quote:${quoteBucket(r.length || 0)}`;
   if (r.kind !== "normal") return null;
+  // survival: one best per number of lives, with regen and the speed floor kept apart too
+  if (r.mode === "survival") {
+    const v = r.surv || {};
+    return ["survival", `${v.lives || 3}l`, v.regen ? "regen" : "", v.floor ? `floor${v.floor}` : "", r.punct ? "punct" : "", r.nums ? "nums" : ""].filter(Boolean).join(" ");
+  }
   const len = r.mode === "time" ? `${r.length}s` : r.mode === "words" ? `${r.length}w` : r.mode;
   return [r.mode === "time" || r.mode === "words" ? len : r.mode, r.list, r.punct ? "punct" : "", r.nums ? "nums" : "", r.sudden ? "sudden" : ""].filter(Boolean).join(" ");
 }
@@ -32,6 +37,13 @@ export function updateBests(bests, r) {
   const enough = r.kind === "code" ? true : r.kind === "quote" ? r.wordsDone >= r.length && r.length >= 5 : r.wordsDone >= 10;
   if (!key || r.mode === "flow" || !enough) return { bests, key, isBest: false, previous: null };
   const prev = bests[key] || null;
+  if (r.mode === "survival") {
+    // the furthest run wins; between runs of the same length, the better score
+    const far = prev?.words ?? -1;
+    const better = !prev || r.wordsDone > far || (r.wordsDone === far && r.score > prev.score + 1e-9);
+    if (!better) return { bests, key, isBest: false, previous: prev };
+    return { bests: { ...bests, [key]: { score: r.score, wpm: r.wpm, acc: r.acc, at: r.at, id: r.id, words: r.wordsDone } }, key, isBest: true, previous: prev };
+  }
   const better = !prev || r.score > prev.score + 1e-9 || (Math.abs(r.score - prev.score) < 1e-9 && r.wpm > prev.wpm);
   if (!better) return { bests, key, isBest: false, previous: prev };
   return {

@@ -6,6 +6,7 @@ import { LISTS } from "../core/words.js";
 import { SNIPPETS } from "../core/code.js";
 import { esc, fmtDuration } from "./util.js";
 import { levelFrom, XP_RULES } from "../core/levels.js";
+import { survivalLabel } from "../core/survival.js";
 
 export function resultLabel(r) {
   if (r.kind === "code") return `code · ${SNIPPETS.find((s) => s.id === r.snippet)?.title || r.snippet}`;
@@ -13,12 +14,17 @@ export function resultLabel(r) {
   if (r.kind === "practice") return "practice";
   if (r.kind === "daily") return `daily · ${new Date(r.at).toLocaleDateString(undefined, { day: "numeric", month: "short" })}`;
   if (r.kind === "challenge") return `challenge · ${r.mode === "time" ? `${r.length}s` : `${r.length} words`}`;
+  if (r.mode === "survival") return ["survival", `${r.wordsDone} words`, r.surv ? survivalLabel(r.surv) : "", r.punct ? "punctuation" : "", r.nums ? "numbers" : ""].filter(Boolean).join(" · ");
   const base = r.mode === "flow" ? "flow" : r.mode === "time" ? `${r.length}s` : `${r.length} words`;
   const extra = [r.kind === "mix" ? "mixed" : "", r.list && r.list !== "200" ? (LISTS[r.list]?.label || r.list).toLowerCase() : "", r.punct ? "punctuation" : "", r.nums ? "numbers" : "", r.sudden ? "sudden death" : ""].filter(Boolean);
   return [base, ...extra].join(" · ");
 }
 export const bestLabel = (key) => {
   if (key.startsWith("quote:")) return `quote · ${key.slice(6)}`;
+  if (key.startsWith("survival ")) {
+    const p = key.split(" ").slice(1), lives = parseInt(p[0], 10) || 3, floor = p.find((x) => x.startsWith("floor"));
+    return ["survival", survivalLabel({ lives, regen: p.includes("regen"), floor: floor ? +floor.slice(5) : 0 }), p.includes("punct") ? "punctuation" : "", p.includes("nums") ? "numbers" : ""].filter(Boolean).join(" · ");
+  }
   if (key.startsWith("code:")) return `code · ${SNIPPETS.find((s) => s.id === key.slice(5))?.title || key.slice(5)}`;
   const [len, list, ...rest] = key.split(" ");
   const l = len.endsWith("w") ? `${len.slice(0, -1)} words` : len.endsWith("s") ? `${len.slice(0, -1)} seconds` : len;
@@ -107,8 +113,8 @@ export function renderStats(view, state, handlers) {
     const line = ranked.map((r, i) => `${i ? "L" : "M"}${X(i).toFixed(1)},${Y(r.score).toFixed(1)}`).join("");
     spark = `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Score of your last ${ranked.length} ranked galleys"><path class="a" d="${line}L${W},${H}L0,${H}Z"></path><path class="l" d="${line}" vector-effect="non-scaling-stroke"></path></svg>`;
   }
-  const recentRows = state.recent.slice(0, 15).map((r) => `<tr><td>${shortDate(r.at)}</td><td>${esc(resultLabel(r))}</td><td class="num">${Math.round(r.wpm)}</td><td class="num">${r.acc.toFixed(1)}%</td><td class="num">${r.score.toFixed(1)}</td><td class="num">${r.pp != null ? r.pp.toFixed(1) : ""}</td><td class="grade g${grade(r.acc)}">${r.kind === "code" || r.mode === "flow" ? "" : grade(r.acc)}</td></tr>`).join("");
-  const bestRows = bests.map(([k, b]) => `<tr><td>${esc(bestLabel(k))}</td><td class="num">${b.score.toFixed(1)}</td><td class="num">${Math.round(b.wpm)}</td><td class="num">${b.acc.toFixed(1)}%</td><td>${shortDate(b.at)}</td></tr>`).join("");
+  const recentRows = state.recent.slice(0, 15).map((r) => `<tr><td>${shortDate(r.at)}</td><td>${esc(resultLabel(r))}</td><td class="num">${Math.round(r.wpm)}</td><td class="num">${r.acc.toFixed(1)}%</td><td class="num">${r.score.toFixed(1)}</td><td class="num">${r.pp != null ? r.pp.toFixed(1) : ""}</td><td class="grade g${grade(r.acc)}">${r.kind === "code" || r.mode === "flow" || r.mode === "survival" ? "" : grade(r.acc)}</td></tr>`).join("");
+  const bestRows = bests.map(([k, b]) => `<tr><td>${esc(bestLabel(k))}</td><td class="num">${b.words != null ? `${b.words} words` : b.score.toFixed(1)}</td><td class="num">${Math.round(b.wpm)}</td><td class="num">${b.acc.toFixed(1)}%</td><td>${shortDate(b.at)}</td></tr>`).join("");
 
   view.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap">
