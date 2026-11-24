@@ -767,7 +767,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       return true;
     } catch (e) {
       console.warn("Room trouble", e);
-      roomError = "Couldn't reach the room. Check your connection and try again.";
+      roomError = `Couldn't reach the room (${String(e?.code || e?.message || e).slice(0, 120)}). Check your connection and try again.`;
       return false;
     } finally { roomBusy = false; drawRoom(); }
   }
