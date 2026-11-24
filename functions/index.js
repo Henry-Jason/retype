@@ -9,7 +9,8 @@ import { initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { boardEntry, survivalEntry, DAY_MS } from "./board.js";
 import { ppPlay, nextEntry } from "./pp.js";
-import { screenQuote, submission, existingVerdict, countToday, review, report, sharedId, SHARE_RULES, limitsFor } from "./shared/core/moderation.js";
+import { screenQuote, submission, existingVerdict, countToday, review, report, sharedId, SHARE_RULES, limitsFor, screenName, safeName, fallbackName } from "./shared/core/moderation.js";
+import { onValueWritten } from "firebase-functions/v2/database";
 
 initializeApp();
 // europe-west1 sits beside the eur3 Firestore database; the cap keeps a runaway from costing money
@@ -26,7 +27,7 @@ export const postDaily = onDocumentCreated("users/{uid}/results/{rid}", async (e
   if (!result || result.kind !== "daily") return;
   const { uid, rid } = event.params;
   const profile = await db.doc(`profiles/${uid}`).get();
-  const out = boardEntry({ uid, rid, result, name: profile.exists ? profile.data().name : null, now: Date.now() });
+  const out = boardEntry({ uid, rid, result, name: profile.exists ? safeName(profile.data().name, uid) : null, now: Date.now() });
   if (!out.ok) { logger.info("daily not posted", { uid, rid, reason: out.reason }); return; }
   const ref = db.doc(`boards/daily-${result.day}/entries/${uid}`);
   await db.runTransaction(async (tx) => {
@@ -42,7 +43,7 @@ export const postDailySurvival = onDocumentCreated("users/{uid}/results/{rid}", 
   if (!result || result.kind !== "dsurv") return;
   const { uid, rid } = event.params;
   const profile = await db.doc(`profiles/${uid}`).get();
-  const out = survivalEntry({ uid, rid, result, name: profile.exists ? profile.data().name : null, now: Date.now() });
+  const out = survivalEntry({ uid, rid, result, name: profile.exists ? safeName(profile.data().name, uid) : null, now: Date.now() });
   if (!out.ok) { logger.info("daily survival not posted", { uid, rid, reason: out.reason }); return; }
   const ref = db.doc(`boards/dsurv-${result.day}/entries/${uid}`);
   await db.runTransaction(async (tx) => {
@@ -52,9 +53,10 @@ export const postDailySurvival = onDocumentCreated("users/{uid}/results/{rid}", 
   });
 });
 
+// every name copied anywhere public goes through safeName, in case an old profile predates the check
 const nameOf = async (uid) => {
   const p = await db.doc(`profiles/${uid}`).get();
-  return p.exists ? p.data().name : null;
+  return p.exists ? safeName(p.data().name, uid) : null;
 };
 const ppRef = (uid) => db.doc(`boards/pp/entries/${uid}`);
 
@@ -105,11 +107,29 @@ export const clearPp = onDocumentDeleted("users/{uid}", async (event) => {
   await ppRef(event.params.uid).delete();
 });
 
+/**
+ * Display names are set only through here, so the name filter's word lists stay on the server.
+ * { name, fallback }: with fallback, a name that fails becomes "Typist ABCD" instead of an error
+ * (used for the first name, taken from the Google account).
+ */
+export const setName = onCall(async (req) => {
+  const uid = req.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Sign in first.");
+  const r = screenName(req.data?.name);
+  if (!r.ok && !req.data?.fallback) throw new HttpsError("invalid-argument", r.reason);
+  const name = r.ok ? r.name : fallbackName(uid);
+  await db.doc(`profiles/${uid}`).set({ name });
+  return { name };
+});
+
 /** A changed display name follows onto the PP board, the last two days' daily boards and shared quotes. */
 export const renameOnBoards = onDocumentWritten("profiles/{uid}", async (event) => {
-  const name = event.data?.after?.data()?.name;
-  if (!name) return;
+  const raw = event.data?.after?.data()?.name;
+  if (!raw) return;
   const { uid } = event.params;
+  const name = safeName(raw, uid);
+  // a name that got past the check some other way: replace it, and this runs again with the new one
+  if (name !== raw) { await event.data.after.ref.set({ name }); return; }
   const days = [0, 1].map((n) => new Date(Date.now() - n * DAY_MS).toISOString().slice(0, 10));
   const quotes = await db.collection("quotes").where("uid", "==", uid).get();
   const refs = [ppRef(uid), ...days.flatMap((day) => ["daily", "dsurv"].map((b) => db.doc(`boards/${b}-${day}/entries/${uid}`))), ...quotes.docs.map((d) => d.ref)];
@@ -231,4 +251,16 @@ export const clearOldRooms = onSchedule("every 6 hours", async () => {
   stale.forEach((s) => { dead[s.key] = null; });
   if (Object.keys(dead).length) await lobby.update(dead);
   logger.info("cleared old rooms", { rooms: Object.keys(gone).length, lobby: Object.keys(dead).length });
+});
+
+/**
+ * Names in friend rooms are written by the browser straight into the Realtime Database (they
+ * come from the checked profile, but a browser could write anything). One that fails the check
+ * is replaced within a moment, before strangers in a quick race have much chance to see it.
+ */
+export const screenRoomName = onValueWritten({ ref: "/rooms/{code}/players/{uid}/name", instance: "retype-883ba-default-rtdb" }, async (event) => {
+  const raw = event.data.after.val();
+  if (typeof raw !== "string") return;
+  const name = safeName(raw, event.params.uid);
+  if (name !== raw) await event.data.after.ref.set(name);
 });

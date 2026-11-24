@@ -79,15 +79,12 @@ describe("galley results", () => {
 });
 
 describe("profiles", () => {
-  it("are public to read and yours alone to write", async () => {
-    await assertSucceeds(setDoc(doc(as("ana"), "profiles/ana"), { name: "Ana" }));
+  it("are public to read, and only the setName function writes them", async () => {
+    await env.withSecurityRulesDisabled((c) => setDoc(doc(c.firestore(), "profiles/ana"), { name: "Ana" }));
     await assertSucceeds(getDoc(doc(anon(), "profiles/ana")));
+    await assertFails(setDoc(doc(as("ana"), "profiles/ana"), { name: "Ana B" }));
     await assertFails(setDoc(doc(as("ben"), "profiles/ana"), { name: "Ben" }));
-  });
-  it("hold only a sensible name", async () => {
-    await assertFails(setDoc(doc(as("ana"), "profiles/ana"), { name: "A" }));
-    await assertFails(setDoc(doc(as("ana"), "profiles/ana"), { name: "x".repeat(21) }));
-    await assertFails(setDoc(doc(as("ana"), "profiles/ana"), { name: "Ana", admin: true }));
+    await assertSucceeds(deleteDoc(doc(as("ana"), "profiles/ana")));
   });
 });
 

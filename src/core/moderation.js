@@ -48,6 +48,31 @@ export function tokens(text) {
 const hasSlur = (text) => tokens(text).some((t) => SLURS.includes(t));
 const hasStrong = (text) => tokens(text).some((t) => STRONG.some((w) => t === w || (STEMS.has(w) && t.startsWith(w))));
 
+/* ---------- display names ---------- */
+
+// Names show on the boards and to strangers in quick races, so they're held to a stricter line
+// than quotes: no strong language at all, no links or handles, and nothing posing as staff.
+const RESERVED = ["admin", "administrator", "moderator", "mod", "mods", "retype", "official", "staff", "support", "system"];
+
+/** The same tidying as cleanName in sync.js (kept here: this file runs on the server too). */
+const tidyName = (s) => String(s || "").replace(/[<>]/g, "").replace(/\s+/g, " ").trim().slice(0, 20).trim();
+
+/** Check a display name. Returns { ok: true, name } or { ok: false, reason } in words the player can act on. */
+export function screenName(raw) {
+  const name = tidyName(raw);
+  if (name.length < 2) return { ok: false, reason: "Use 2 to 20 characters." };
+  if (hasSlur(name) || hasStrong(name)) return { ok: false, reason: "Pick a name without swearing or slurs." };
+  if (LINK.test(name) || EMAIL.test(name) || HANDLE.test(name) || /\d{6,}/.test(name)) return { ok: false, reason: "Names can't be links, emails, handles or numbers." };
+  if (tokens(name).some((t) => RESERVED.includes(t))) return { ok: false, reason: "That name's reserved. Pick another." };
+  return { ok: true, name };
+}
+
+/** What a player is called when their name can't be used: Typist and a few characters of their id. */
+export const fallbackName = (uid) => `Typist ${String(uid || "").replace(/[^a-z0-9]/gi, "").slice(-4).toUpperCase() || "0000"}`;
+
+/** A name that's safe to show: the given one if it passes, otherwise the fallback. */
+export const safeName = (raw, uid) => { const r = screenName(raw); return r.ok ? r.name : fallbackName(uid); };
+
 /* ---------- the filter ---------- */
 
 const LINK = /(https?:\/\/|www\.|\b[a-z0-9-]{2,}\.(com|net|org|io|gg|xyz|ru|ly|co|uk|ie|me|tv|app|dev|link|info|biz)\b)/i;

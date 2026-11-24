@@ -1828,8 +1828,8 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
         onRename: async (raw) => {
           const name = cleanName(raw);
           if (!name) return "Use 2 to 20 characters.";
-          try { await cloud.setProfile(user.uid, name); boardName = name; return "Saved."; }
-          catch (e) { return `Couldn't save (${e?.code || "error"}).`; }
+          try { boardName = await cloud.setName(name); return "Saved."; }
+          catch (e) { return e?.code === "functions/invalid-argument" ? e.message.replace(/^.*?: /, "") : `Couldn't save (${e?.code || "error"}).`; }
         },
         onSignIn: signIn, onSignOut: signOut
       });

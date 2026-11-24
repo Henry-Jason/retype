@@ -76,7 +76,8 @@ export async function createCloud(config, { emulators = false } = {}) {
       const s = await F.getDoc(F.doc(db, "profiles", uid));
       return s.exists() ? s.data() : null;
     },
-    setProfile: (uid, name) => F.setDoc(F.doc(db, "profiles", uid), { name }),
+    /** Through the setName function, which checks it. Rejects with the reason; with fallback, a bad name becomes "Typist ABCD". */
+    setName: async (name, { fallback = false } = {}) => (await call("setName", { name, fallback })).name,
     // board: "daily" (ordered by score) or "dsurv", the daily survival run (ordered by rank:
     // words survived, then score)
     async dailyBoard(day, n = 50, board = "daily") {

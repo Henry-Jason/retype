@@ -76,9 +76,8 @@ export async function pushGalley({ store, cloud, uid, state, result, words, toda
 export async function ensureProfile({ cloud, user }) {
   const p = await cloud.getProfile(user.uid);
   if (p?.name) return p.name;
-  const name = defaultName(user);
-  await cloud.setProfile(user.uid, name);
-  return name;
+  // the first name comes from the Google account; the server swaps it for "Typist ABCD" if it can't be shown
+  return cloud.setName(defaultName(user), { fallback: true });
 }
 
 /**

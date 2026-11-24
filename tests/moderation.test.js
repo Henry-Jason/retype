@@ -108,3 +108,24 @@ describe("admins", () => {
     expect(submission({ quote: s.quote, flags: s.flags, uid: "ana", name: "Ana", now: 7 })).toMatchObject({ status: "pending", reviewedAt: null });
   });
 });
+
+describe("display names", () => {
+  it("lets ordinary names through, tidied", async () => {
+    const { screenName } = await import("../src/core/moderation.js");
+    for (const n of ["Henry", "Ana B", "Seán Ó Sé", "Typist 42", "Dickens fan", "Cockburn", "xX_quick_Xx"]) expect(screenName(n)).toMatchObject({ ok: true });
+    expect(screenName("  Ana   B  ").name).toBe("Ana B");
+  });
+  it("turns away swearing, slurs, links, handles, long numbers and staff names", async () => {
+    const { screenName } = await import("../src/core/moderation.js");
+    for (const n of ["A", "fuckface", "sh1thead", "f u c k", "Ana the c u n t", "visit typo.gg", "@ana_types", "0871234567", "Admin", "Retype Mod"]) {
+      expect(screenName(n).ok, n).toBe(false);
+    }
+    expect(screenName("Admin").reason).toMatch(/reserved/);
+  });
+  it("falls back to Typist and a bit of the id", async () => {
+    const { safeName, fallbackName } = await import("../src/core/moderation.js");
+    expect(fallbackName("abcDEF12xy9z")).toBe("Typist XY9Z");
+    expect(safeName("shithead", "u-ana")).toBe("Typist UANA");
+    expect(safeName("Ana", "u-ana")).toBe("Ana");
+  });
+});

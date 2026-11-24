@@ -75,12 +75,9 @@ service cloud.firestore {
     }
 
     match /profiles/{uid} {
-      function validProfile(d) {
-        return d.keys().hasOnly(['name'])
-          && d.name is string && d.name.size() >= 2 && d.name.size() <= 20;
-      }
       allow read: if true;
-      allow create, update: if isOwner(uid) && validProfile(request.resource.data);
+      // names are set by the setName Cloud Function, which runs them through the name filter
+      allow create, update: if false;
       allow delete: if isOwner(uid);
     }
 

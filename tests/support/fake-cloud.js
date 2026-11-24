@@ -1,5 +1,5 @@
 import { totalPp } from "../../src/core/pp.js";
-import { screenQuote, submission, sharedId, existingVerdict, review, report } from "../../src/core/moderation.js";
+import { screenQuote, submission, sharedId, existingVerdict, review, report, screenName, fallbackName, safeName } from "../../src/core/moderation.js";
 // An in-memory stand-in for Firebase, used by `vite build --mode uitest` to check the
 // account interface in a browser. Never part of a normal build.
 export function createFakeCloud() {
@@ -21,7 +21,13 @@ export function createFakeCloud() {
     async putResult(uid, r) { const d = load(); d.results[uid] ??= {}; d.results[uid][r.id] ??= r; save(d); },
     async recentResults(uid, n) { return Object.values(load().results[uid] || {}).sort((a, b) => b.at - a.at).slice(0, n); },
     async getProfile(uid) { return (load().profiles || {})[uid] ?? null; },
-    async setProfile(uid, name) { const d = load(); d.profiles ??= {}; d.profiles[uid] = { name }; save(d); },
+    // like the setName Cloud Function: the server's name filter, and a fallback on request
+    async setName(raw, { fallback = false } = {}) {
+      const r = screenName(raw);
+      if (!r.ok && !fallback) throw Object.assign(new Error(r.reason), { code: "functions/invalid-argument" });
+      const name = r.ok ? r.name : fallbackName(me.uid);
+      const d = load(); d.profiles ??= {}; d.profiles[me.uid] = { name }; save(d); return name;
+    },
     // the board as the Cloud Function would fill it, seeded with two rivals
     async dailyBoard(day) {
       const d = load(), mine = Object.values(d.results["test-uid"] || {}).filter((r) => r.kind === "daily" && r.day === day).sort((a, b) => a.at - b.at)[0];
@@ -135,13 +141,13 @@ function createFakeRooms() {
       if (load(code)) return { error: "taken" };
       for (const [k, v] of Object.entries({ host: uid, created: Date.now(), settings, round: 0, state: "lobby", public: open })) put(code, k, v);
       if (open) localStorage.setItem(LOBBY + code, JSON.stringify({ mode: settings.mode, n: 1, state: "lobby", at: Date.now() }));
-      put(code, `players/${uid}`, { name, joined: Date.now(), online: true });
+      put(code, `players/${uid}`, { name: safeName(name, uid), joined: Date.now(), online: true });
       here = { code, uid }; done(); return { ok: true };
     },
     async join(code, { uid, name }) {
       const r = load(code);
       if (!r) return { error: "There's no room with that code." };
-      put(code, `players/${uid}`, { name, joined: r.players?.[uid]?.joined ?? Date.now(), online: true });
+      put(code, `players/${uid}`, { name: safeName(name, uid), joined: r.players?.[uid]?.joined ?? Date.now(), online: true }); // as screenRoomName would
       here = { code, uid }; done(); return { ok: true };
     },
     watch(code, cb) {
