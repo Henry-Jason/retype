@@ -44,7 +44,7 @@ describe("rooms", () => {
     await assertFails(update(ref(db("ben"), "rooms/KXQ7P"), { state: "done" }));
     await assertFails(set(ref(db("ben"), "rooms/KXQ7P/settings"), { ...settings, length: 50 }));
     await assertFails(update(ref(db("ana"), "rooms/KXQ7P"), { round: 0 })); // rounds only go up
-    await assertFails(set(ref(db("ana"), "rooms/KXQ7P/settings"), { ...settings, mode: "survival" }));
+    await assertFails(set(ref(db("ana"), "rooms/KXQ7P/settings"), { ...settings, mode: "flow" })); // not a race mode
   });
   it("lets you write only your own player entry and runs, in the current round", async () => {
     await made();
