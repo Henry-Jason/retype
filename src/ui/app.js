@@ -20,7 +20,8 @@ import { renderBoards, ordinal } from "./boards.js";
 import { levelFrom } from "../core/levels.js";
 import { UNLOCKS, isUnlocked, needs, chosen, newlyUnlocked } from "../core/unlocks.js";
 import { headline, featById } from "../core/feats.js";
-import { cleanName } from "../core/sync.js";
+import { cleanName, fromCloud } from "../core/sync.js";
+import { ghostTimeline, charsAt, place, leadSecs, fmtLead, wordStarts } from "../core/ghost.js";
 import { $, esc, pad, stampDate, uuid } from "./util.js";
 import { pickQuote, words as quoteWords, LENGTHS as QUOTE_LENGTHS, addQuotes } from "../core/quotes.js";
 import { loadQuotes, saveQuotes, loadCommunity, saveCommunity, slim, STALE, loadFavs, saveFavs, loadDeleted, saveDeleted, forgetSaved } from "../storage/quote-store.js";
@@ -242,7 +243,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     for (const [key, label] of [["200", "200"], ["1k", "1k"], ["5k", "5k"], ["10k", "10k"]]) {
       const b = btn(label, plain && !surv && cfg.list === key, () => {
         cfg.list = key; if (cfg.mode === "survival") cfg.mode = "words"; saveSettings(cfg);
-        newTest(test && test.source.kind === "mix" ? { ...test.source, seed: undefined } : { kind: "normal" });
+        newTest(test && test.source.kind === "mix" ? { ...plain(test.source), seed: undefined } : { kind: "normal" });
       });
       b.title = `${LISTS[key].label} words`;
       lists.appendChild(b);
@@ -458,7 +459,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
   /* ---------- lifecycle ---------- */
   function focusInput() { if (!drawerOpen && test && !test.ended && statsView.hidden) input.focus(); }
   function newTest(source) {
-    clearInterval(ticker); clearTimeout(idleTimer);
+    clearInterval(ticker); clearTimeout(idleTimer); stopGhost();
     document.body.classList.remove("ended", "typing-now");
     doneBand.hidden = true;
     const code = source.kind === "code", practice = source.kind === "practice", quoteMode = source.kind === "quote";
@@ -489,7 +490,8 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       survival, lives: survival ? o.surv.lives : null, charged: new Set(), cleanRun: 0, commits: [], floorSince: 0, floorAt: 0, lost: { miss: 0, slow: 0 }, regained: 0,
       startT: null, pausedTotal: 0, pauseStart: null, lastT: null, gap: false, keys: [], ended: false,
       total: 0, okKeys: 0, streak: 0, best: 0, corrections: [],
-      code, snippet, lines, lineNo, tok: null, layout: code ? "page" : cfg.layout
+      code, snippet, lines, lineNo, tok: null, layout: code ? "page" : cfg.layout,
+      racer: null, raceOut: null, starts: [0], lastResult: null
     };
     document.body.classList.toggle("flow", flow);
     stage.classList.toggle("galley", test.layout === "galley");
@@ -510,6 +512,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       : null;
     startReceipt(); renderCorrections(); renderConfig(); updateTag(); updateLive(); updateStanding();
     measure(); placeCaret(true);
+    if (source.ghost) raceAgainst({ ...source.ghost, who: "your ghost" }); else wantBestGhost();
     focusInput();
   }
   // Esc: the same galley again (same seed, so the same words)
@@ -519,7 +522,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
   }
   // Tab: a fresh galley of the same kind (the next script in code mode)
   function fresh() {
-    const s = test.source;
+    const s = plain(test.source);
     if (s.kind === "code") newTest({ kind: "code", idx: (s.idx + 1) % SNIPPETS.length });
     else if (s.kind === "quote") newTest(quoteSource(s.quote.id));
     else if (s.kind === "challenge" || s.kind === "daily" || s.kind === "dsurv") newTest({ kind: "normal" });
@@ -710,6 +713,101 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     if (fix) { const i = document.createElement("i"); i.className = "fix"; i.textContent = fix; s.appendChild(i); }
   }
   function flash(el, cls) { el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); setTimeout(() => el.classList.remove(cls), 220); }
+
+  /* ---------- ghost races ---------- */
+  // A past run replayed as a faint second caret: your best of the same kind, or (from the results)
+  // the run you just typed, on the same words. The maths is in core/ghost.js.
+  const ghostEl = document.createElement("div"); ghostEl.id = "ghost"; ghostEl.setAttribute("aria-hidden", "true");
+  const ghostStat = $("#ghostStat"), liveGhost = $("#liveGhost");
+  const ghostRuns = new Map(); // result id → stored run, so a best is only fetched once
+  let ghostRaf = null;
+  const plain = (s) => { const { ghost, ...rest } = s; return rest; };
+  function stopGhost() { cancelAnimationFrame(ghostRaf); ghostRaf = null; ghostEl.remove(); ghostStat.hidden = true; }
+  // The best to race: one of the same kind, for galleys that keep bests.
+  function bestGhostKey() {
+    const s = test.source, o = test.opts;
+    if (test.code) return modeKey({ kind: "code", snippet: test.snippet.id });
+    if (test.quote) return s.kind === "quote" && !s.from ? modeKey({ kind: "quote", length: test.targets.length }) : null;
+    if (s.kind !== "normal" || test.survival || test.flow || !(o.mode === "words" || o.mode === "time")) return null;
+    return modeKey({ kind: "normal", mode: o.mode, length: o.mode === "time" ? o.length : test.targets.length, list: o.list, punct: o.punct, nums: o.nums, sudden: o.sudden });
+  }
+  async function loadRun(id) {
+    if (ghostRuns.has(id)) return ghostRuns.get(id);
+    let r = await store.getResult(id).catch(() => null);
+    if (!r && cloud && user) r = await cloud.getResult(user.uid, id).then((d) => (d ? fromCloud(d) : null)).catch(() => null);
+    if (!r?.keys?.length || !r.targets?.length) return null;
+    ghostRuns.set(id, r);
+    return r;
+  }
+  function wantBestGhost() {
+    if (cfg.ghost !== "best") return;
+    const key = bestGhostKey(), best = key && state.bests[key];
+    if (!best?.id) return;
+    const t = test;
+    loadRun(best.id).then((r) => { if (r && test === t && !t.ended) raceAgainst({ keys: r.keys, targets: r.targets, who: "your best" }); });
+  }
+  function raceAgainst(g) {
+    const same = g.targets.slice(0, test.targets.length).every((x, i) => x === test.targets[i]);
+    const tl = ghostTimeline(g.keys, g.targets);
+    // a ghost that finished different words keeps going at its pace; one on these words stops where it stopped
+    test.racer = { tl, who: g.who, words: g.words ?? null, same, carry: !same && tl.reach >= tl.total, lead: 0, shown: 0 };
+    ghostEl.dataset.who = g.who; ghostEl.classList.remove("done"); ghostEl.hidden = true;
+    track.appendChild(ghostEl);
+    ghostStat.hidden = false; liveGhost.textContent = "level"; liveGhost.className = "";
+    $("#ghostLabel").textContent = g.who === "your best" ? "vs your best" : "vs your ghost";
+    ghostFrame();
+  }
+  function ghostChars(ms) {
+    const { tl, carry } = test.racer;
+    return carry && ms > tl.end ? tl.reach + (ms - tl.end) * (tl.reach / Math.max(tl.end, 1)) : charsAt(tl, ms);
+  }
+  function syncStarts() { if (test.starts.length !== test.targets.length + 1) test.starts = wordStarts(test.targets); }
+  function myChars() {
+    syncStarts();
+    const w = Math.min(test.cur, test.targets.length - 1);
+    return test.starts[w] + Math.min(test.typed[w].length, test.targets[w].length);
+  }
+  function ghostFrame() {
+    ghostRaf = null;
+    const rc = test?.racer; if (!rc || test.ended) return;
+    const ms = elapsed() * 1000, chars = ghostChars(ms);
+    syncStarts();
+    const { w, p } = place(chars, test.starts, test.targets);
+    const L = cache[w], len = test.targets[w].length;
+    if (!L || !L.length) ghostEl.hidden = true; // lifted off the page: well behind you
+    else {
+      const at = p < len ? L[p] : null, last = L[len - 1];
+      const x = at ? at.l : last.l + last.w, ref = at || last;
+      const y = test.layout === "page" ? ref.t + ref.h / 2 - (FS.page[cfg.size] * 1.15) / 2 : 0;
+      ghostEl.style.transform = `translate(${x}px,${y}px)`;
+      ghostEl.hidden = false;
+    }
+    const total = test.infinite ? Infinity : test.starts[test.targets.length] - 1;
+    ghostEl.classList.toggle("done", test.startT != null && (chars >= total || (!rc.carry && ms >= rc.tl.end)));
+    if (test.startT != null && now() - rc.shown > 120) {
+      rc.shown = now();
+      rc.lead = leadSecs(rc.tl, myChars(), ms);
+      liveGhost.textContent = fmtLead(rc.lead);
+      liveGhost.className = !Number.isFinite(rc.lead) || Math.abs(rc.lead) >= 0.05 ? (rc.lead > 0 ? "ahead" : "behind") : "";
+    }
+    ghostRaf = requestAnimationFrame(ghostFrame);
+  }
+  // At the finish: how it went. Survival is decided by distance, everything else by time to the same place.
+  function raceResult(secs) {
+    cancelAnimationFrame(ghostRaf); ghostRaf = null;
+    const rc = test.racer;
+    if (!rc || !test.committed || (test.died && !test.survival)) return;
+    test.raceOut = test.survival && rc.words != null ? { words: test.committed - rc.words } : { lead: leadSecs(rc.tl, myChars(), secs * 1000) };
+  }
+  const ghostCard = () => test.committed && !test.flow
+    ? `<div class="card"><h3>Race your ghost</h3><p>The same ${test.code ? "script" : test.quote ? "quote" : "words"} again, with this run replayed beside you as a ghost.</p><button class="go" id="btnGhost">Start</button></div>`
+    : "";
+  function wireGhost() {
+    $("#btnGhost")?.addEventListener("click", () => {
+      const r = test.lastResult; if (!r) return;
+      newTest({ ...plain(test.source), ghost: { keys: r.keys, targets: r.targets, words: test.survival ? r.wordsDone : null } });
+    });
+  }
 
   /* ---------- timing ---------- */
   const now = () => performance.now();
@@ -963,12 +1061,13 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
   /* ---------- finishing ---------- */
   function nextFromResults() {
     if (test.code || test.quote) { fresh(); return; }
-    newTest(test.source.kind === "mix" ? { ...test.source, seed: undefined } : { kind: "normal" });
+    newTest(test.source.kind === "mix" ? { ...plain(test.source), seed: undefined } : { kind: "normal" });
   }
   async function finish(t) {
     if (test.ended) return;
     test.ended = true; clearInterval(ticker); clearTimeout(idleTimer);
     const secs = elapsed(t);
+    raceResult(secs);
     const r = analyse(test, secs);
     document.body.classList.add("ended"); document.body.classList.remove("typing-now");
     input.blur(); stage.classList.remove("unfocused"); pencil.classList.add("idle");
@@ -983,6 +1082,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
         snippet: test.code ? test.snippet.id : test.quote ? test.quote.id : null, seed: test.seed, wordsDone: test.committed
       }
     });
+    test.lastResult = result;
     const thisGalley = galleyNo();
     const earlierDailies = state.recent.filter((x) => x.kind === "daily");
     let change = null;
@@ -1057,6 +1157,15 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       if (unlocked.length) toast(`Unlocked for your desk: ${unlocked.map((u) => u.label).join(", ")}. Settings → Desk.`, "pb");
     }
     const from = test.source.from;
+    if (test.raceOut) {
+      const o = test.raceOut, name = test.racer.who, Name = name[0].toUpperCase() + name.slice(1);
+      const head = o.words != null
+        ? (o.words > 0 ? `Outlasted ${name} by ${o.words} ${o.words === 1 ? "word" : "words"}` : o.words < 0 ? `${-o.words} ${o.words === -1 ? "word" : "words"} short of ${name}` : `Level with ${name}`)
+        : !Number.isFinite(o.lead) ? `Left ${name} behind`
+        : Math.abs(o.lead) < 0.05 ? `Dead level with ${name}` : o.lead > 0 ? `Beat ${name} by ${o.lead.toFixed(1)}s` : `${Name} won by ${(-o.lead).toFixed(1)}s`;
+      badges += `<span class="${(o.words ?? o.lead) > 0 ? "pb" : "rankup"}">${head}</span>`;
+      if (o.words == null) note += `<div class="note">${test.racer.same ? "The ghost is that run, keystroke for keystroke." : "The ghost runs at your best's pace in characters, on these words."} It races to the line; bests still go by score.</div>`;
+    }
     if (from && test.committed) {
       const c = compare({ wpm: r.wpm, acc: test.died ? r.acc : r.acc }, from, score), who = from.name || "them";
       const head = c.result === "win" ? `You beat ${esc(who)} by ${c.diff.toFixed(1)}` : c.result === "loss" ? `${esc(from.name || "They")} ${from.name ? "wins" : "win"} by ${(-c.diff).toFixed(1)}` : `Dead heat with ${esc(who)}`;
@@ -1178,7 +1287,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
         <div class="card"><h3>Drill slow pairs</h3><p>${drill ? `30 words built around ${esc(drill.pairs.join(", "))}.` : "Needs a few more slow pairs first."}</p>
           <button class="go" id="btnDrill" ${drill ? "" : "disabled"}>Start drill</button></div>
         ${nextCard}
-        ${shareCard}${challengeCard()}
+        ${ghostCard()}${shareCard}${challengeCard()}
       </div>
       <div class="foot">${r.keys} keystrokes timed. Latencies after a pause, a correction or a gap over 2s are left out.</div>`;
     drawResultChart(r);
@@ -1220,7 +1329,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       cfg.ratio = +b.dataset.v; saveSettings(cfg);
       $("#ratio").querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
     };
-    wireShare(r, no); wireChallenge(r);
+    wireShare(r, no); wireChallenge(r); wireGhost();
   }
 
   function codeResults(r, no) {
@@ -1252,13 +1361,13 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
         <div class="card"><h3>Type it again</h3><p>Same script, now that you know where it bites.</p><button class="go primary" id="btnPractice">Start <kbd>enter</kbd></button></div>
         <div class="card"><h3>Next script</h3><p>${esc(nextTitle)}.</p><button class="go" id="btnNext">Start <kbd>tab</kbd></button></div>
         <div class="card"><h3>Back to words</h3><p>A ${modeLabel} galley.</p><button class="go" id="btnWords">Start</button></div>
-        ${shareCard}${challengeCard()}
+        ${ghostCard()}${shareCard}${challengeCard()}
       </div>`;
     drawResultChart(r);
     $("#btnPractice").onclick = () => newTest({ ...test.source });
     $("#btnNext").onclick = fresh;
     $("#btnWords").onclick = () => newTest({ kind: "normal" });
-    wireShare(r, no); wireChallenge(r);
+    wireShare(r, no); wireChallenge(r); wireGhost();
   }
 
   function drawResultChart(r) {

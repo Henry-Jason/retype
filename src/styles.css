@@ -103,6 +103,16 @@ body.hide-live .live .stat{display:none}
 .fix{left:50%;transform:translateX(-50%);top:-1.05em}
 .l.gap::after{content:"‸";left:-.3em;top:.84em}
 #pencil{position:absolute;width:4px;background:var(--pencil);border-radius:2px;pointer-events:none;z-index:1}
+/* the ghost: a past run replayed as a faint second caret, labelled above */
+#ghost{position:absolute;left:0;width:3px;margin-left:-1.5px;border-radius:2px;background:var(--todo);opacity:.75;pointer-events:none;z-index:1;transition:transform 70ms linear,opacity .3s;will-change:transform}
+#ghost::before{content:attr(data-who);position:absolute;bottom:calc(100% + 3px);left:50%;transform:translateX(-50%);font:700 10px/1 system-ui,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:var(--todo);white-space:nowrap}
+#ghost[hidden]{display:none}
+#ghost.done{opacity:.35}
+.galley #ghost{top:calc(var(--fs) * -.2);height:calc(var(--fs) * 1.4)}
+.page #ghost{top:0;height:calc(var(--fs) * 1.15)}
+.stat b.ahead{color:#2e9d62}
+.stat b.behind{color:var(--desk-pencil)}
+@media (prefers-reduced-motion:reduce){#ghost{transition:none}}
 #pencil.idle{animation:blink 1.05s steps(1) infinite}
 @keyframes blink{55%{opacity:.15}}
 #hidden{position:absolute;opacity:0;pointer-events:none;width:1px;height:1px;left:0;top:0;border:0;padding:0}

@@ -58,6 +58,10 @@ export async function createCloud(config, { emulators = false } = {}) {
         throw e;
       }
     },
+    async getResult(uid, id) {
+      const s = await F.getDoc(result(uid, id));
+      return s.exists() ? s.data() : null;
+    },
     async recentResults(uid, n) {
       const snap = await F.getDocs(F.query(results(uid), F.orderBy("at", "desc"), F.limit(n)));
       return snap.docs.map((d) => d.data());
