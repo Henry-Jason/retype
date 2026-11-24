@@ -103,16 +103,19 @@ body.hide-live .live .stat{display:none}
 .fix{left:50%;transform:translateX(-50%);top:-1.05em}
 .l.gap::after{content:"‸";left:-.3em;top:.84em}
 #pencil{position:absolute;width:4px;background:var(--pencil);border-radius:2px;pointer-events:none;z-index:1}
-/* the ghost: a past run replayed as a faint second caret, labelled above */
-#ghost{position:absolute;left:0;width:3px;margin-left:-1.5px;border-radius:2px;background:var(--todo);opacity:.75;pointer-events:none;z-index:1;transition:transform 70ms linear,opacity .3s;will-change:transform}
-#ghost::before{content:attr(data-who);position:absolute;bottom:calc(100% + 3px);left:50%;transform:translateX(-50%);font:700 10px/1 system-ui,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:var(--todo);white-space:nowrap}
-#ghost[hidden]{display:none}
-#ghost.done{opacity:.35}
-.galley #ghost{top:calc(var(--fs) * -.2);height:calc(var(--fs) * 1.4)}
-.page #ghost{top:0;height:calc(var(--fs) * 1.15)}
+/* the ghost (a past run) and rivals in a friend race: faint second carets, labelled above */
+#ghost,.ghosty{position:absolute;left:0;width:3px;margin-left:-1.5px;border-radius:2px;background:var(--todo);opacity:.75;pointer-events:none;z-index:1;transition:transform 70ms linear,opacity .3s;will-change:transform}
+#ghost::before,.ghosty::before{content:attr(data-who);position:absolute;bottom:calc(100% + 3px);left:50%;transform:translateX(-50%);font:700 10px/1 system-ui,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:var(--todo);white-space:nowrap}
+#ghost[hidden],.ghosty[hidden]{display:none}
+#ghost.done,.ghosty.done{opacity:.35}
+.ghosty.rival{background:var(--ink-muted);opacity:.55;transition:transform .22s linear,opacity .3s}
+.ghosty.rival::before{color:var(--ink-muted)}
+.ghosty.rival.gone{opacity:.15}
+.galley #ghost,.galley .ghosty{top:calc(var(--fs) * -.2);height:calc(var(--fs) * 1.4)}
+.page #ghost,.page .ghosty{top:0;height:calc(var(--fs) * 1.15)}
 .stat b.ahead{color:#2e9d62}
 .stat b.behind{color:var(--desk-pencil)}
-@media (prefers-reduced-motion:reduce){#ghost{transition:none}}
+@media (prefers-reduced-motion:reduce){#ghost,.ghosty{transition:none}}
 #pencil.idle{animation:blink 1.05s steps(1) infinite}
 @keyframes blink{55%{opacity:.15}}
 #hidden{position:absolute;opacity:0;pointer-events:none;width:1px;height:1px;left:0;top:0;border:0;padding:0}
@@ -560,3 +563,36 @@ html[data-rt-theme=dark][data-paper=newsprint] .receipt{background:#2f2d28;color
 body.hide-pace .pace,body.ended .pace{display:none}
 body.focus.typing-now .pace{opacity:.6}
 @media (prefers-reduced-motion:reduce){.pace i{transition:none}}
+
+/* friend rooms: the countdown, lanes above the paper, and the room page */
+.countdown{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:700 calc(var(--fs) * 1.6)/1 "Courier Prime",monospace;color:var(--pencil);background:color-mix(in srgb,var(--paper) 70%,transparent);z-index:3;pointer-events:none}
+.countdown[hidden]{display:none}
+.lanes .wrap{display:flex;flex-direction:column;gap:5px;padding-bottom:14px}
+.lanehead{font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--desk-muted);margin-bottom:2px}
+.lane{display:grid;grid-template-columns:minmax(70px,150px) minmax(0,1fr) 100px;gap:12px;align-items:center;font:600 13px var(--ui);color:var(--desk-muted)}
+.lane .lname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lane .lbar{height:6px;background:var(--chip);border-radius:3px;overflow:hidden}
+.lane .lbar i{display:block;height:100%;background:var(--desk-muted);opacity:.6;transform-origin:left;transition:transform .2s linear}
+.lane .ltail{text-align:right;font-variant-numeric:tabular-nums}
+.lane.me{color:var(--desk-ink)}
+.lane.me .lbar i{background:var(--desk-pencil);opacity:.9}
+.lane.done .lbar i{opacity:.35}
+body.focus.typing-now .lanes{opacity:.5}
+.roomcode{font-family:"Courier Prime",monospace;letter-spacing:.12em;color:var(--desk-pencil)}
+.roomset{display:flex;flex-direction:column;gap:6px}
+.roomset .seg button:disabled{cursor:default}
+.players{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;font:15px "Courier Prime",monospace}
+.players li{display:flex;align-items:center;gap:8px}
+.players li.gone{opacity:.5}
+.players small{color:var(--ink-muted);font-family:var(--ui)}
+.hosttag{font:600 10px var(--ui);letter-spacing:.1em;text-transform:uppercase;color:var(--pencil);border:1px solid currentColor;border-radius:4px;padding:1px 5px}
+.players .dot{width:8px;height:8px;border-radius:50%;background:var(--todo);display:inline-block}
+.players .dot.synced{background:#2e9d62}
+.chin.code{text-transform:uppercase;letter-spacing:.12em;width:12ch}
+.tbl.race tr.out td{color:var(--ink-muted)}
+.tbl.race small{color:var(--ink-muted);font-family:var(--ui)}
+.tbl td.muted{color:var(--ink-muted)}
+.hint-race{display:none}
+body.racing .hint-race{display:inline}
+body.racing .hint-solo{display:none}
+body.ended .lanes{display:none}

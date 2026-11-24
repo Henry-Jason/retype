@@ -24,6 +24,7 @@ export async function createCloud(config, { emulators = false } = {}) {
     return (await fns(name)(data)).data;
   }
   const rows = (snap) => snap.docs.map((d) => d.data());
+  let rooms = null;
 
   return {
     onUser(cb) {
@@ -35,6 +36,11 @@ export async function createCloud(config, { emulators = false } = {}) {
       await A.signInWithPopup(auth, provider);
     },
     signOut: () => A.signOut(auth),
+    /** Friend rooms (the Realtime Database), loaded the first time someone opens one. */
+    async rooms() {
+      if (!rooms) rooms = import("./rooms.js").then((m) => m.createRooms(app, { emulators }));
+      return rooms;
+    },
 
     async getAccount(uid) {
       const s = await F.getDoc(account(uid));

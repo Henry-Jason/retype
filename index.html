@@ -27,6 +27,8 @@
       <div class="tag" id="tag" hidden></div>
     </div>
 
+    <section class="lanes" id="lanes" hidden aria-label="Race standings"></section>
+
     <section class="stage galley" id="stage">
       <input id="hidden" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Typing input">
       <div class="tape"><div id="track"></div></div>
@@ -40,11 +42,12 @@
       <div class="left" id="during">
         <div class="corr"><h2>Corrections</h2><ol id="corr"></ol></div>
         <div class="hints">
-          <span><kbd>tab</kbd> new galley</span>
+          <span class="hint-race">a race can't be restarted or paused: the clock runs for everyone</span>
+          <span class="hint-solo"><kbd>tab</kbd> new galley</span>
           <span class="hint-flow"><kbd>esc</kbd> finish the session</span>
-          <span class="hint-noflow"><kbd>esc</kbd> restart this one</span>
+          <span class="hint-noflow hint-solo"><kbd>esc</kbd> restart this one</span>
           <span><kbd>ctrl</kbd> <kbd>⌫</kbd> delete word</span>
-          <span>the clock pauses if you click away</span>
+          <span class="hint-solo">the clock pauses if you click away</span>
         </div>
       </div>
       <div class="left" id="after" hidden></div>

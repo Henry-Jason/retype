@@ -5,7 +5,7 @@ import { SURVIVAL } from "./survival.js";
 
 const SURV = (r) => r.mode === "survival";
 const big = (r, n) => (r.wordsDone || 0) >= n;
-const fast = (wpm) => (r) => (r.kind === "normal" || r.kind === "mix" || r.kind === "daily" || r.kind === "challenge") && (r.mode === "words" || r.mode === "time") && big(r, 25) && r.acc >= 95 && r.wpm >= wpm;
+const fast = (wpm) => (r) => (r.kind === "normal" || r.kind === "mix" || r.kind === "daily" || r.kind === "challenge" || r.kind === "room") && (r.mode === "words" || r.mode === "time") && big(r, 25) && r.acc >= 95 && r.wpm >= wpm;
 const survived = (n) => (r) => SURV(r) && big(r, n);
 
 /**
@@ -33,6 +33,7 @@ export const FEATS = [
   { id: "survroll", head: "Roll runs out before typist does", dek: "The till has been sent for repairs.", hint: "Reach the end of a survival roll.", check: survived(SURVIVAL.maxWords) },
   { id: "sudden100", head: "Sudden death? Not today", dek: "A hundred words on a single life.", hint: "Survive 100 words with 1 life.", check: (r) => SURV(r) && r.surv?.lives === 1 && big(r, 100) },
   { id: "dsurv", head: "Early edition: first daily survival filed", dek: "Today's run, on the record.", hint: "Play a daily survival run.", check: (r) => r.kind === "dsurv" },
+  { id: "room", head: "Local typists meet in friendly race", dek: "Same words, same start, no excuses.", hint: "Finish a race in a friend room.", check: (r) => r.kind === "room" && big(r, 10) },
   { id: "daily", head: "Daily galley filed before deadline", dek: "The same 40 words as everyone else, done.", hint: "Finish a daily galley.", check: (r) => r.kind === "daily" && big(r, 40) },
   { id: "python", head: "Typist found to be fluent in Python", dek: "Indentation: impeccable.", hint: "Finish a Python script at 95%+.", check: (r) => r.kind === "code" && r.acc >= 95 },
   { id: "quote", head: "Quote, unquote", dek: "Somebody else's words, typed as your own.", hint: "Finish a quote.", check: (r) => r.kind === "quote" && r.wordsDone >= r.length },

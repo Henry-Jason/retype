@@ -45,6 +45,9 @@
     "singleProjectMode": true,
     "functions": {
       "port": 5001
+    },
+    "database": {
+      "port": 9000
     }
   },
   "functions": [
@@ -60,5 +63,8 @@
         "node scripts/sync-functions.mjs"
       ]
     }
-  ]
+  ],
+  "database": {
+    "rules": "database.rules.json"
+  }
 }

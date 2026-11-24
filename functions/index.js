@@ -2,6 +2,8 @@
 // scoring code is copied into ./shared by scripts/sync-functions.mjs before each deploy.
 import { onDocumentCreated, onDocumentWritten, onDocumentDeleted } from "firebase-functions/v2/firestore";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
+import { onSchedule } from "firebase-functions/v2/scheduler";
+import { getDatabase } from "firebase-admin/database";
 import { setGlobalOptions, logger } from "firebase-functions/v2";
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
@@ -209,4 +211,18 @@ export const reviewQuote = onCall(async (req) => {
 export const forgetQuoteNames = onDocumentDeleted("users/{uid}", async (event) => {
   const snap = await db.collection("quotes").where("uid", "==", event.params.uid).get();
   await Promise.all(snap.docs.map((d) => d.ref.update({ name: "" })));
+});
+
+/**
+ * Friend rooms live in the Realtime Database and nobody deletes them when they leave, so rooms
+ * made more than a day ago are cleared out every six hours.
+ */
+const ROOMS_DB = "https://retype-883ba-default-rtdb.europe-west1.firebasedatabase.app";
+export const clearOldRooms = onSchedule("every 6 hours", async () => {
+  const rooms = getDatabase(undefined, ROOMS_DB).ref("rooms");
+  const old = await rooms.orderByChild("created").endAt(Date.now() - 86400000).limitToFirst(500).get();
+  const gone = {};
+  old.forEach((s) => { gone[s.key] = null; });
+  if (Object.keys(gone).length) await rooms.update(gone);
+  logger.info("cleared old rooms", { count: Object.keys(gone).length });
 });

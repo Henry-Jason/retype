@@ -8,8 +8,10 @@ export const firebaseConfig = {
   projectId: "retype-883ba",
   storageBucket: "retype-883ba.firebasestorage.app",
   messagingSenderId: "1001287894242",
-  appId: "1:1001287894242:web:ae27954081cfb41c578abb"
+  appId: "1:1001287894242:web:ae27954081cfb41c578abb",
+  // friend rooms: the Realtime Database, made in europe-west1 (see README → Friend rooms)
+  databaseURL: "https://retype-883ba-default-rtdb.europe-west1.firebasedatabase.app"
 };
 
-// `npm run dev:emulators` points the app at local Auth and Firestore emulators instead.
-export const emulatorConfig = { apiKey: "demo-key", authDomain: "demo-retype.firebaseapp.com", projectId: "demo-retype", appId: "demo-app" };
+// `npm run dev:emulators` points the app at local Auth, Firestore and Realtime Database emulators instead.
+export const emulatorConfig = { apiKey: "demo-key", authDomain: "demo-retype.firebaseapp.com", projectId: "demo-retype", appId: "demo-app", databaseURL: "http://127.0.0.1:9000?ns=demo-retype-default-rtdb" };

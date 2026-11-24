@@ -7,11 +7,15 @@ export function createFakeCloud() {
   const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || { accounts: {}, results: {}, user: null }; } catch { return { accounts: {}, results: {}, user: null }; } };
   const save = (d) => localStorage.setItem(KEY, JSON.stringify(d));
   let listener = null;
-  const me = { uid: "test-uid", name: "Henry Test", email: "henry@example.com", photo: "" };
+  // ?as=Ana signs this tab in as its own player, for racing a friend room against another tab
+  const as = new URLSearchParams(location.search).get("as");
+  const me = as ? { uid: "u-" + as.toLowerCase(), name: as, email: `${as.toLowerCase()}@example.com`, photo: "" } : { uid: "test-uid", name: "Henry Test", email: "henry@example.com", photo: "" };
+  let rooms = null;
   return {
-    onUser(cb) { listener = cb; setTimeout(() => cb(load().user), 0); return () => {}; },
-    async signIn() { const d = load(); d.user = me; save(d); listener?.(me); },
-    async signOut() { const d = load(); d.user = null; save(d); listener?.(null); },
+    onUser(cb) { listener = cb; setTimeout(() => cb(as ? me : load().user), 0); return () => {}; },
+    async signIn() { if (!as) { const d = load(); d.user = me; save(d); } listener?.(me); },
+    async signOut() { if (!as) { const d = load(); d.user = null; save(d); } listener?.(null); },
+    async rooms() { return (rooms ??= createFakeRooms()); },
     async getAccount(uid) { return load().accounts[uid] ?? null; },
     async foldAccount(uid, fn) { const d = load(); const next = fn(d.accounts[uid] ?? null); d.accounts[uid] = next; save(d); return next; },
     async putResult(uid, r) { const d = load(); d.results[uid] ??= {}; d.results[uid][r.id] ??= r; save(d); },
@@ -82,5 +86,78 @@ export function createFakeCloud() {
     async getSaved(uid) { return (load().saved || {})[uid] ?? null; },
     async foldSaved(uid, fn) { const d = load(); d.saved ??= {}; const next = fn(d.saved[uid] ?? null); d.saved[uid] = { v: 1, ...next, updated: Date.now() }; save(d); return next; },
     async deleteAll(uid) { const d = load(); delete d.accounts[uid]; delete d.results[uid]; save(d); }
+  };
+}
+
+// Friend rooms in localStorage, shared between tabs of the same browser through storage events,
+// with the same API as storage/rooms.js. Each player entry, run and room field is its own key, so
+// tabs writing at once don't overwrite each other (as with separate paths in the real database).
+// No rules are enforced here; database.rules.json has its own tests.
+function createFakeRooms() {
+  const PRE = "retype-fake-room:";
+  const unit = (parts) => parts.slice(0, parts[0] === "players" ? 2 : parts[0] === "runs" ? 3 : 1);
+  const read = (k) => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } };
+  function load(code) {
+    let room = null;
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k.startsWith(PRE + code + "/")) continue;
+      const parts = k.slice(PRE.length + code.length + 1).split("/");
+      let o = (room ??= {});
+      for (const p of parts.slice(0, -1)) o = o[p] ??= {};
+      o[parts.at(-1)] = read(k);
+    }
+    return room;
+  }
+  const watchers = new Set();
+  const notify = () => { for (const w of watchers) w(); };
+  addEventListener("storage", (e) => { if (e.key?.startsWith(PRE)) notify(); });
+  // write a value at a path inside a room, touching only the keys it lands in
+  function put(code, path, val) {
+    const parts = path.split("/"), u = unit(parts);
+    if (u.length < parts.length || (val && typeof val === "object" && (parts[0] === "players" ? parts.length < 2 : parts[0] === "runs" ? parts.length < 3 : false))) {
+      if (u.length < parts.length) { // inside a unit: read, change, write it back
+        const k = PRE + code + "/" + u.join("/"), cur = read(k) || {};
+        let o = cur; for (const p of parts.slice(u.length, -1)) o = o[p] ??= {};
+        o[parts.at(-1)] = val; localStorage.setItem(k, JSON.stringify(cur)); return;
+      }
+      for (const [k, v] of Object.entries(val)) put(code, `${path}/${k}`, v); return; // above a unit: spread
+    }
+    const k = PRE + code + "/" + parts.join("/");
+    if (val === null) localStorage.removeItem(k); else localStorage.setItem(k, JSON.stringify(val));
+  }
+  const done = () => setTimeout(notify, 15);
+  let here = null;
+  addEventListener("pagehide", () => { if (here) put(here.code, `players/${here.uid}/online`, false); });
+  return {
+    serverNow: () => Date.now(),
+    async create(code, { uid, name, settings }) {
+      if (load(code)) return { error: "taken" };
+      for (const [k, v] of Object.entries({ host: uid, created: Date.now(), settings, round: 0, state: "lobby" })) put(code, k, v);
+      put(code, `players/${uid}`, { name, joined: Date.now(), online: true });
+      here = { code, uid }; done(); return { ok: true };
+    },
+    async join(code, { uid, name }) {
+      const r = load(code);
+      if (!r) return { error: "There's no room with that code." };
+      put(code, `players/${uid}`, { name, joined: r.players?.[uid]?.joined ?? Date.now(), online: true });
+      here = { code, uid }; done(); return { ok: true };
+    },
+    watch(code, cb) {
+      const w = () => cb(load(code));
+      watchers.add(w); setTimeout(w, 0);
+      return () => watchers.delete(w);
+    },
+    async leave(code, uid) { here = null; put(code, `players/${uid}/online`, false); done(); },
+    async update(code, patch) {
+      if (!load(code)) return;
+      for (const [k, v] of Object.entries(patch)) {
+        if (k === "entrants") for (let i = localStorage.length - 1; i >= 0; i--) { const key = localStorage.key(i); if (key?.startsWith(PRE + code + "/entrants")) localStorage.removeItem(key); }
+        put(code, k, v);
+      }
+      done();
+    },
+    async report(code, round, uid, run) { put(code, `runs/${round}/${uid}`, run); done(); },
+    async remove(code) { for (let i = localStorage.length - 1; i >= 0; i--) { const k = localStorage.key(i); if (k?.startsWith(PRE + code + "/")) localStorage.removeItem(k); } done(); }
   };
 }

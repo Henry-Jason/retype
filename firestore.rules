@@ -60,7 +60,7 @@ service cloud.firestore {
           return d.id == rid
             && d.userId == uid
             && d.at is int
-            && d.kind in ['normal', 'mix', 'practice', 'code', 'daily', 'challenge', 'quote', 'dsurv']
+            && d.kind in ['normal', 'mix', 'practice', 'code', 'daily', 'challenge', 'quote', 'dsurv', 'room']
             && d.wpm is number && d.wpm >= 0 && d.wpm < 1000
             && d.acc is number && d.acc >= 0 && d.acc <= 100
             && d.keys is string && d.keys.size() < 500000

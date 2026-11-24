@@ -42,9 +42,9 @@ export const RANKS = [
   { name: "Fourth estate", min: 11000 }
 ];
 
-/** Ordinary galleys count: plain, mixed, the daily and challenge links, by words or time. */
+/** Ordinary galleys count: plain, mixed, the daily, challenge links and friend-room races, by words or time. */
 export const countsForPp = (r) =>
-  ["normal", "mix", "daily", "challenge"].includes(r.kind) && (r.mode === "words" || r.mode === "time") && !r.sudden && (r.wordsDone || 0) >= PP_RULES.minWords;
+  ["normal", "mix", "daily", "challenge", "room"].includes(r.kind) && (r.mode === "words" || r.mode === "time") && !r.sudden && (r.wordsDone || 0) >= PP_RULES.minWords;
 
 /* ---------- how hard the words were ---------- */
 

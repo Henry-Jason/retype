@@ -10,10 +10,11 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:rules": "firebase emulators:exec --only firestore --project demo-retype \"vitest run --config vitest.rules.config.js\"",
-    "emulators": "firebase emulators:start --only auth,firestore --project demo-retype",
+    "test:rules": "firebase emulators:exec --only firestore,database --project demo-retype \"vitest run --config vitest.rules.config.js\"",
+    "emulators": "firebase emulators:start --only auth,firestore,database --project demo-retype",
     "dev:emulators": "vite --mode emulators",
-    "deploy": "npm test && npm run build && firebase deploy --only hosting,firestore:rules,functions"
+    "deploy": "npm test && npm run build && firebase deploy --only hosting,firestore:rules,database,functions",
+    "rules:db": "node scripts/build-db-rules.mjs"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^4.0.1",

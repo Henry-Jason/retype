@@ -14,6 +14,7 @@ export function resultLabel(r) {
   if (r.kind === "quote") return `quote · ${r.length} words`;
   if (r.kind === "practice") return "practice";
   if (r.kind === "daily") return `daily · ${new Date(r.at).toLocaleDateString(undefined, { day: "numeric", month: "short" })}`;
+  if (r.kind === "room") return `friend race · ${r.mode === "time" ? `${r.length}s` : `${r.length} words`}`;
   if (r.kind === "challenge") return `challenge · ${r.mode === "time" ? `${r.length}s` : `${r.length} words`}`;
   if (r.mode === "survival") return [r.kind === "dsurv" ? `daily survival · ${new Date(r.at).toLocaleDateString(undefined, { day: "numeric", month: "short" })}` : "survival", `${r.wordsDone} words`, r.surv ? survivalLabel(r.surv) : "", r.punct ? "punctuation" : "", r.nums ? "numbers" : ""].filter(Boolean).join(" · ");
   const base = r.mode === "flow" ? "flow" : r.mode === "time" ? `${r.length}s` : `${r.length} words`;
@@ -93,7 +94,7 @@ function topPlaysCard(top) {
         <li><b>Harder words</b> earn more: about 0.85× for the top 200, 1× for the top 1,000, 1.2× for the top 5,000, a little more with punctuation or numbers.</li>
         <li><b>Length:</b> 0.9× at 25 words, 1× at 50, up to 1.2× at 100 words or more.</li>
         <li><b>Your total</b> is your best galley, plus 95% of your second best, 90% of your third and so on, down your top ${R.top}. It only goes up when you set a new top galley.</li>
-      </ul>Plain, mixed, daily and challenge galleys of ${R.minWords}+ words count; practice, code, flow and sudden death don't. Grades go by accuracy: SS at 100%, S at 98%, A at 95%, B at 90%, C at 85%.</details></div>`;
+      </ul>Plain, mixed, daily, challenge and friend-race galleys of ${R.minWords}+ words count; practice, code, flow and sudden death don't. Grades go by accuracy: SS at 100%, S at 98%, A at 95%, B at 90%, C at 85%.</details></div>`;
 }
 
 /** The scrapbook: every headline you've made, newest first, and the stories still unreported. */

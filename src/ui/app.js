@@ -20,7 +20,9 @@ import { renderBoards, ordinal } from "./boards.js";
 import { levelFrom } from "../core/levels.js";
 import { UNLOCKS, isUnlocked, needs, chosen, newlyUnlocked } from "../core/unlocks.js";
 import { headline, featById } from "../core/feats.js";
-import { cleanName, fromCloud } from "../core/sync.js";
+import { cleanName, fromCloud, defaultName } from "../core/sync.js";
+import { ROOM, readCode, newCode, roomSettings, settingsLabel, nextHost, runReport, roundOver, standings, ordinal as placeName } from "../core/room.js";
+import { renderRoom, standingsTable, lanesHtml } from "./race.js";
 import { ghostTimeline, charsAt, place, leadSecs, fmtLead, wordStarts } from "../core/ghost.js";
 import { $, esc, pad, stampDate, uuid } from "./util.js";
 import { pickQuote, words as quoteWords, LENGTHS as QUOTE_LENGTHS, addQuotes } from "../core/quotes.js";
@@ -200,6 +202,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
 
   /* ---------- header ---------- */
   const ICON_GEAR = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`;
+  const ICON_FLAG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></svg>`;
   const ICON_PODIUM = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21V8h6v13M3 21v-8h6M15 21v-5h6v5M2 21h20M12 2.5l.9 1.8 2 .3-1.45 1.4.35 2-1.8-.95-1.8.95.35-2L9.1 4.6l2-.3z"/></svg>`;
   const ICON_CHART = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>`;
   function renderConfig() {
@@ -298,6 +301,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
         nav("navbtn", "Sign in", signIn, "signIn", "Sign in with Google to keep your progress on every device");
       }
     }
+    nav("navbtn" + (location.hash.startsWith("#room") ? " on" : ""), `${ICON_FLAG}Race${room ? ` <i class="badge" title="You're in room ${room.code}">${room.code}</i>` : ""}`, () => { location.hash = room ? "room=" + room.code : "room"; }, "openRoom", "Race friends in a private room");
     nav("navbtn" + (location.hash === "#quotes" ? " on" : ""), `${ICON_QUOTE}Quotes${queueCount ? ` <i class="badge" title="${queueCount} to review">${queueCount}</i>` : ""}`, () => { location.hash = "quotes"; }, "openQuotes");
     nav("navbtn" + (location.hash === "#boards" ? " on" : ""), `${ICON_PODIUM}Boards`, () => { location.hash = "boards"; }, "openBoards");
     nav("navbtn" + (location.hash === "#stats" ? " on" : ""), `${ICON_CHART}Stats${editionNew ? ` <i class="badge" title="A new weekly edition is out">new</i>` : ""}`, () => { location.hash = editionNew ? "edition" : "stats"; }, "openStats");
@@ -370,6 +374,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     }
   }
   async function signOut() {
+    if (room) await leaveRoom();
     if (!cloud) return;
     await cloud.signOut();
     user = null; sync = "idle"; admin = false; shared = new Map(); queueCount = 0;
@@ -392,6 +397,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
         user = u;
         await runSync();
         try { boardName = await ensureProfile({ cloud: c, user: u }); } catch (e) { console.warn("Couldn't set up the board name", e); }
+        resumeRoom();
         ensurePpBoard({ cloud: c, uid: u.uid, state }).catch((e) => console.warn("Couldn't score older galleys for the PP board", e));
         if (c.isAdmin) { admin = await c.isAdmin(u.uid); refreshQueueCount(); }
         syncSaved().then(() => { if (location.hash === "#quotes") route(); });
@@ -459,7 +465,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
   /* ---------- lifecycle ---------- */
   function focusInput() { if (!drawerOpen && test && !test.ended && statsView.hidden) input.focus(); }
   function newTest(source) {
-    clearInterval(ticker); clearTimeout(idleTimer); stopGhost();
+    clearInterval(ticker); clearTimeout(idleTimer); stopGhost(); stopRace();
     document.body.classList.remove("ended", "typing-now");
     doneBand.hidden = true;
     const code = source.kind === "code", practice = source.kind === "practice", quoteMode = source.kind === "quote";
@@ -512,7 +518,8 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       : null;
     startReceipt(); renderCorrections(); renderConfig(); updateTag(); updateLive(); updateStanding();
     measure(); placeCaret(true);
-    if (source.ghost) raceAgainst({ ...source.ghost, who: "your ghost" }); else wantBestGhost();
+    if (source.kind === "room") setUpRace(source);
+    else if (source.ghost) raceAgainst({ ...source.ghost, who: "your ghost" }); else wantBestGhost();
     focusInput();
   }
   // Esc: the same galley again (same seed, so the same words)
@@ -566,6 +573,12 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       $("#exitTag").onclick = () => newTest({ kind: "normal" });
       return;
     }
+    if (s.kind === "room") {
+      tag.hidden = false;
+      tag.innerHTML = `<span>Race ${s.round} · room ${esc(s.code)} · ${esc(settingsLabel(test.opts))}</span><button type="button" id="exitTag">Room page</button>`;
+      $("#exitTag").onclick = () => { location.hash = "room=" + s.code; };
+      return;
+    }
     if (s.kind === "normal") {
       tag.hidden = !extra.length && !notice;
       tag.innerHTML = `<span>${[notice, ...extra].filter(Boolean).join(" · ")}</span>`;
@@ -605,6 +618,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
   }
   function updateLive() {
     updatePace();
+    if (test.race) sendRun();
     const acc = test.total ? (test.okKeys / test.total) * 100 : 100;
     liveAcc.textContent = (acc === 100 ? "100" : acc.toFixed(1)) + "%";
     liveAcc.className = acc < 95 ? "dip" : "";
@@ -714,6 +728,227 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
   }
   function flash(el, cls) { el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); setTimeout(() => el.classList.remove(cls), 220); }
 
+  /* ---------- friend rooms ---------- */
+  // One room at a time. The room page is #room (or #room=CODE); a race runs in the ordinary
+  // typing view as a galley of kind "room", started for everyone by the host at the same moment.
+  // Rules of a race: core/room.js. Database: storage/rooms.js (or the fake one in uitest builds).
+  let room = null;          // { code, api, data, unsub }
+  let roomBusy = false, roomError = "", hostTimer = null;
+  const ROOM_KEY = "retype-room";
+  const myUid = () => user?.uid || null;
+  const myName = () => cleanName(boardName) || defaultName(user);
+  const roomLink = (code) => `${location.origin}${location.pathname}#room=${code}`;
+  function drawRoom() {
+    if (!location.hash.startsWith("#room")) return;
+    renderRoom(statsView, {
+      enabled: accountsEnabled && !!cloud?.rooms, signedIn: !!user, me: myUid(), busy: roomBusy, error: roomError,
+      room: room?.data ? { code: room.code, data: room.data } : null, link: room ? roomLink(room.code) : "",
+      onSignIn: signIn, onCreate: makeRoom, onJoin: (raw) => { const c = readCode(raw); if (c) location.hash = "room=" + c; else { roomError = "That doesn't look like a room code: 5 letters and numbers."; drawRoom(); } },
+      onLeave: async () => { await leaveRoom(); location.hash = "room"; },
+      onStart: startRound, onEnd: () => room.api.update(room.code, { state: "done" }),
+      onSettings: (st) => room.api.update(room.code, { settings: roomSettings(st) }).catch((e) => console.warn("Couldn't change the room", e)),
+      onBack: () => { location.hash = ""; }
+    });
+  }
+  async function enterRoom(code, how) {
+    if (!user || !cloud?.rooms) return;
+    roomBusy = true; roomError = ""; drawRoom();
+    try {
+      if (room && room.code !== code) await leaveRoom();
+      const api = await cloud.rooms();
+      const out = await how(api);
+      if (out.error) { roomError = out.error; return false; }
+      room = { code, api, data: null, unsub: null };
+      try { sessionStorage.setItem(ROOM_KEY, code); } catch { /* fine */ }
+      room.unsub = api.watch(code, onRoomData);
+      clearInterval(hostTimer); hostTimer = setInterval(hostDuties, 1000);
+      renderNavs();
+      return true;
+    } catch (e) {
+      console.warn("Room trouble", e);
+      roomError = "Couldn't reach the room. Check your connection and try again.";
+      return false;
+    } finally { roomBusy = false; drawRoom(); }
+  }
+  async function makeRoom() {
+    const settings = roomSettings({ mode: cfg.mode === "time" ? "time" : "words", length: cfg.mode === "time" ? cfg.time : cfg.words, list: cfg.list, punct: cfg.punct, nums: cfg.nums });
+    for (let i = 0; i < 4; i++) {
+      const code = newCode();
+      const ok = await enterRoom(code, (api) => api.create(code, { uid: myUid(), name: myName(), settings }));
+      if (ok) { location.hash = "room=" + code; return; }
+      if (roomError !== "taken") return;
+    }
+    roomError = "Couldn't find a free code. Try again."; drawRoom();
+  }
+  async function joinRoom(code) {
+    const ok = await enterRoom(code, (api) => api.join(code, { uid: myUid(), name: myName() }));
+    if (!ok && location.hash !== "#room") history.replaceState(null, "", "#room");
+  }
+  function resumeRoom() {
+    let code = readCode(location.hash.startsWith("#room=") ? location.hash.slice(6) : "");
+    try { code ||= sessionStorage.getItem(ROOM_KEY); } catch { /* fine */ }
+    if (code && !room && !roomBusy) joinRoom(code);
+  }
+  async function leaveRoom() {
+    if (!room) return;
+    const r = room; room = null;
+    clearInterval(hostTimer); hostTimer = null;
+    r.unsub?.();
+    try { sessionStorage.removeItem(ROOM_KEY); } catch { /* fine */ }
+    await r.api.leave(r.code, myUid()).catch(() => {});
+    if (test?.race && !test.ended) newTest({ kind: "normal" });
+    renderNavs();
+  }
+  function onRoomData(data) {
+    if (!room) return;
+    if (!data) {
+      const code = room.code;
+      leaveRoom(); roomError = `Room ${code} has closed.`; drawRoom(); return;
+    }
+    room.data = data;
+    const me = myUid();
+    // the host has gone: the longest-standing player still here takes over
+    if (data.host !== me && nextHost(data) === me) room.api.update(room.code, { host: me }).catch(() => {});
+    // a new race for us: everyone's galley opens at startAt
+    if (data.state === "race" && data.entrants?.[me] && room.raced !== data.round && !roundOver(data, room.api.serverNow())) {
+      room.raced = data.round;
+      newTest({ kind: "room", code: room.code, round: data.round, seed: data.seed, startAt: data.startAt, opts: { ...data.settings, sudden: false } });
+      if (location.hash) location.hash = "";
+    }
+    if (test?.race && test.race.code === room.code && test.race.round === data.round) {
+      if (data.state === "done" && !test.ended && test.startT != null) finish();
+      else if (!test.ended) drawRivals();
+      else drawRaceResults();
+    }
+    drawRoom();
+  }
+  // The host calls the race when it's over (everyone finished or gone, or the clock ran out).
+  function hostDuties() {
+    const d = room?.data;
+    if (!d || d.host !== myUid() || d.state !== "race") return;
+    if (roundOver(d, room.api.serverNow())) room.api.update(room.code, { state: "done" }).catch(() => {});
+  }
+  async function startRound() {
+    const d = room?.data;
+    if (!d || d.host !== myUid() || d.state === "race") return;
+    const entrants = Object.fromEntries(Object.entries(d.players || {}).filter(([, p]) => p.online).map(([uid]) => [uid, true]));
+    await room.api.update(room.code, { round: (d.round || 0) + 1, seed: randomSeed(), startAt: Math.round(room.api.serverNow() + ROOM.countdownMs), state: "race", entrants })
+      .catch((e) => { roomError = "Couldn't start the race."; console.warn(e); drawRoom(); });
+  }
+
+  /* the race itself, in the typing view */
+  const lanes = $("#lanes"), countdown = document.createElement("div");
+  countdown.className = "countdown"; countdown.setAttribute("aria-live", "assertive");
+  let rivalEls = new Map();
+  function setUpRace(source) {
+    const startPerf = now() + (source.startAt - room.api.serverNow());
+    test.race = { code: source.code, round: source.round, startPerf, goTimer: null, cdTimer: null, sent: 0, sendTimer: null };
+    document.body.classList.add("racing");
+    rivalEls = new Map();
+    stage.appendChild(countdown); countdown.hidden = false;
+    const tick = () => {
+      const left = test.race.startPerf - now();
+      if (left <= 0) { go(); return; }
+      countdown.textContent = Math.ceil(left / 1000);
+      test.race.cdTimer = setTimeout(tick, Math.min(100, left));
+    };
+    tick();
+    lanes.hidden = false;
+    drawRivals();
+  }
+  function go() {
+    if (!test.race || test.startT != null) return;
+    test.startT = test.race.startPerf; // everyone's clock starts together, typing or not
+    countdown.textContent = "Go"; setTimeout(() => { countdown.hidden = true; }, 500);
+    if (test.infinite) ticker = setInterval(() => { updateLive(); if (test.limit && elapsed() >= test.limit) finish(); }, 100);
+    pencil.classList.remove("idle");
+    sendRun();
+    focusInput();
+  }
+  function stopRace() {
+    if (test?.race) { clearTimeout(test.race.cdTimer); clearTimeout(test.race.goTimer); clearTimeout(test.race.sendTimer); }
+    countdown.hidden = true; lanes.hidden = true; document.body.classList.remove("racing");
+    for (const el of rivalEls.values()) el.remove();
+    rivalEls = new Map();
+  }
+  // What we tell the room: at most five times a second while typing, and once at the end.
+  function liveNumbers() {
+    const secs = Math.max(elapsed(), 0.001);
+    let chars = 0;
+    for (let w = 0; w < test.committed; w++) if (test.typed[w] === test.targets[w]) chars += test.targets[w].length + 1;
+    return { wpm: chars / 5 / (secs / 60), acc: test.total ? (test.okKeys / test.total) * 100 : 100, secs };
+  }
+  function sendRun(fin = null) {
+    const rc = test.race; if (!rc || !room || rc.code !== room.code || test.startT == null) return;
+    if (!fin) {
+      if (test.ended) return;
+      const wait = rc.sent + 200 - now();
+      if (wait > 0) { if (!rc.sendTimer) rc.sendTimer = setTimeout(() => { rc.sendTimer = null; sendRun(); }, wait); return; }
+    }
+    rc.sent = now();
+    const n = fin ? { wpm: fin.r.wpm, acc: fin.r.acc, secs: fin.secs } : liveNumbers();
+    // a word race counts as finished only if you got to the end; a timed one when the clock does
+    const done = !!fin && (test.opts.mode === "time" ? !test.died : test.committed >= test.targets.length);
+    const run = runReport({ chars: myChars(), words: test.committed, wpm: n.wpm, acc: n.acc, done, secs: n.secs, at: Math.round(room.api.serverNow()) });
+    room.api.report(rc.code, rc.round, myUid(), run).catch((e) => console.warn("Couldn't send progress", e));
+    if (!fin) drawLanes(run);
+  }
+  // Everyone else as a named caret on your galley, and as lanes above it.
+  function drawRivals() {
+    const d = room?.data; if (!d || !test.race) return;
+    const runs = d.runs?.[test.race.round] || {}, me = myUid();
+    let far = 0;
+    for (const uid of Object.keys(d.entrants || {})) {
+      if (uid === me) continue;
+      const run = runs[uid] || { c: 0 };
+      far = Math.max(far, run.c);
+      let el = rivalEls.get(uid);
+      if (!el) { el = document.createElement("div"); el.className = "ghosty rival"; el.setAttribute("aria-hidden", "true"); rivalEls.set(uid, el); }
+      if (el.parentNode !== track) track.appendChild(el);
+      el.dataset.who = d.players?.[uid]?.name || "Someone";
+      el.classList.toggle("done", !!run.done);
+      el.classList.toggle("gone", !d.players?.[uid]?.online);
+      growTo(far);
+      caretAt(el, run.c);
+    }
+    drawLanes();
+  }
+  // a timed race: make sure the words reach as far as the quickest racer (same seed, same words)
+  function growTo(chars) {
+    if (!test.infinite) return;
+    syncStarts();
+    let grew = false;
+    while (test.starts[test.targets.length] < chars + 60) {
+      const start = test.targets.length, add = genWords(50, test.genOpts);
+      test.targets.push(...add); test.typed.push(...add.map(() => "")); test.werr.push(...add.map(() => 0));
+      renderFrom(start); syncStarts(); grew = true;
+    }
+    if (grew) measure();
+  }
+  function drawLanes(mine = null) {
+    const d = room?.data; if (!d || !test.race || lanes.hidden) return;
+    const me = myUid(), round = test.race.round;
+    const local = mine || (test.startT != null ? runReport({ chars: myChars(), words: test.committed, ...liveNumbers(), at: 0 }) : null);
+    const view = local ? { ...d, runs: { ...d.runs, [round]: { ...(d.runs?.[round] || {}), [me]: { ...(d.runs?.[round]?.[me] || {}), ...local, done: d.runs?.[round]?.[me]?.done || false } } } } : d;
+    const rows = standings(view, round, me);
+    const total = test.infinite ? 0 : test.starts[test.targets.length] - 1;
+    lanes.innerHTML = `<div class="wrap"><div class="lanehead">Race ${round} · room ${esc(test.race.code)} · ${esc(settingsLabel(d.settings))}</div>${lanesHtml(rows, d.settings, total)}</div>`;
+  }
+  // After you finish: the standings as they come in, and where you placed once everyone's done.
+  function drawRaceResults() {
+    const d = room?.data; if (!d || !test.race) return;
+    const rows = standings(d, test.race.round, myUid());
+    const box = $("#raceTable");
+    if (box) box.innerHTML = standingsTable(rows, d.settings, { live: d.state === "race" && d.round === test.race.round }) + `<div class="sub">Placed by score (wpm × accuracy²); ties go to the quicker finish.</div>`;
+    const badge = $("#racePlace"); if (!badge) return;
+    const mine = rows.find((r) => r.me);
+    const waiting = rows.filter((r) => !r.done && r.online && r.c >= 0 && d.entrants?.[r.uid]).length;
+    const over = d.round !== test.race.round || d.state === "done" || !waiting;
+    if (!over) { badge.textContent = `Waiting for ${waiting} more…`; return; }
+    badge.textContent = mine?.done ? `${placeName(mine.place)} of ${rows.length}` : "Didn't finish";
+    badge.className = mine?.done && mine.place === 1 && rows.length > 1 ? "pb" : "rankup";
+  }
+
   /* ---------- ghost races ---------- */
   // A past run replayed as a faint second caret: your best of the same kind, or (from the results)
   // the run you just typed, on the same words. The maths is in core/ghost.js.
@@ -767,21 +1002,23 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     const w = Math.min(test.cur, test.targets.length - 1);
     return test.starts[w] + Math.min(test.typed[w].length, test.targets[w].length);
   }
+  // Put a ghost or a rival's caret where that many characters along this galley would be.
+  function caretAt(el, chars) {
+    syncStarts();
+    const { w, p } = place(chars, test.starts, test.targets);
+    const L = cache[w], len = test.targets[w].length;
+    if (!L || !L.length) { el.hidden = true; return; } // lifted off the page: well behind you
+    const at = p < len ? L[p] : null, last = L[len - 1];
+    const x = at ? at.l : last.l + last.w, ref = at || last;
+    const y = test.layout === "page" ? ref.t + ref.h / 2 - (FS.page[cfg.size] * 1.15) / 2 : 0;
+    el.style.transform = `translate(${x}px,${y}px)`;
+    el.hidden = false;
+  }
   function ghostFrame() {
     ghostRaf = null;
     const rc = test?.racer; if (!rc || test.ended) return;
     const ms = elapsed() * 1000, chars = ghostChars(ms);
-    syncStarts();
-    const { w, p } = place(chars, test.starts, test.targets);
-    const L = cache[w], len = test.targets[w].length;
-    if (!L || !L.length) ghostEl.hidden = true; // lifted off the page: well behind you
-    else {
-      const at = p < len ? L[p] : null, last = L[len - 1];
-      const x = at ? at.l : last.l + last.w, ref = at || last;
-      const y = test.layout === "page" ? ref.t + ref.h / 2 - (FS.page[cfg.size] * 1.15) / 2 : 0;
-      ghostEl.style.transform = `translate(${x}px,${y}px)`;
-      ghostEl.hidden = false;
-    }
+    caretAt(ghostEl, chars);
     const total = test.infinite ? Infinity : test.starts[test.targets.length] - 1;
     ghostEl.classList.toggle("done", test.startT != null && (chars >= total || (!rc.carry && ms >= rc.tl.end)));
     if (test.startT != null && now() - rc.shown > 120) {
@@ -799,7 +1036,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     if (!rc || !test.committed || (test.died && !test.survival)) return;
     test.raceOut = test.survival && rc.words != null ? { words: test.committed - rc.words } : { lead: leadSecs(rc.tl, myChars(), secs * 1000) };
   }
-  const ghostCard = () => test.committed && !test.flow
+  const ghostCard = () => test.committed && !test.flow && !test.race
     ? `<div class="card"><h3>Race your ghost</h3><p>The same ${test.code ? "script" : test.quote ? "quote" : "words"} again, with this run replayed beside you as a ghost.</p><button class="go" id="btnGhost">Start</button></div>`
     : "";
   function wireGhost() {
@@ -833,6 +1070,10 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
 
   /* ---------- keyboard ---------- */
   input.addEventListener("keydown", (e) => {
+    if (test.race && !test.ended) {
+      // a race can't be restarted or skipped, and nothing counts before the start
+      if (e.key === "Tab" || e.key === "Escape" || test.startT == null) { e.preventDefault(); return; }
+    }
     if (e.key === "Tab") { e.preventDefault(); test.ended ? nextFromResults() : fresh(); return; }
     if (test.ended) { if (e.key === "Enter") { e.preventDefault(); $("#btnPractice")?.click(); } else if (e.key === "Escape" && test.quote) { e.preventDefault(); restart(); } return; }
     if (e.key === "Escape") { e.preventDefault(); if (test.flow) { if (test.committed) finish(); } else restart(); return; }
@@ -1009,6 +1250,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     if (test.code) return `SCRIPT · ${test.snippet.title.toUpperCase()}`;
     if (test.quote) return `QUOTE${test.quote.source ? " · " + test.quote.source.toUpperCase() : ""}`;
     if (test.source.kind === "practice") return "PRACTICE";
+    if (test.source.kind === "room") return `RACE ${test.source.round} · ROOM ${test.source.code}`;
     if (test.source.kind === "daily") return `DAILY · ${dayLabel(test.source.day).toUpperCase()}`;
     if (test.source.kind === "challenge") return `CHALLENGE · ${test.opts.mode === "time" ? test.opts.length + " SECONDS" : test.targets.length + " WORDS"}`;
     if (test.flow) return "FLOW";
@@ -1034,7 +1276,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
   /* ---------- focus ---------- */
   input.addEventListener("blur", () => {
     if (!test.ended) stage.classList.add("unfocused");
-    if (test.startT != null && !test.ended && test.pauseStart == null) test.pauseStart = now();
+    if (test.startT != null && !test.ended && test.pauseStart == null && !test.race) test.pauseStart = now();
     document.body.classList.remove("typing-now");
   });
   input.addEventListener("focus", () => {
@@ -1044,10 +1286,14 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
   stage.addEventListener("mousedown", (e) => { e.preventDefault(); focusInput(); });
   document.addEventListener("keydown", (e) => {
     if (drawerOpen) { if (e.key === "Escape") { e.preventDefault(); closeSettings(); } return; }
-    if (!statsView.hidden) { if (e.key === "Escape" && !/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) { e.preventDefault(); location.hash = ""; } return; }
+    if (!statsView.hidden) {
+      if (e.key === "Escape" && !/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) { e.preventDefault(); location.hash = ""; }
+      else if (e.key === "Enter" && e.target.tagName !== "INPUT" && e.target.tagName !== "BUTTON" && $("#roomStart")) { e.preventDefault(); $("#roomStart").click(); }
+      return;
+    }
     if (document.activeElement === input || e.target.tagName === "INPUT") return;
     if (e.target.tagName === "BUTTON" && (e.key === "Enter" || e.key === " ")) return;
-    if (e.key === "Tab") { e.preventDefault(); test.ended ? nextFromResults() : fresh(); return; }
+    if (e.key === "Tab") { e.preventDefault(); if (test.race && !test.ended) return; test.ended ? nextFromResults() : fresh(); return; }
     if (test.ended) { if (e.key === "Enter") { e.preventDefault(); $("#btnPractice")?.click(); } else if (e.key === "Escape" && test.quote) { e.preventDefault(); restart(); } return; }
     if (!e.metaKey && !e.ctrlKey && e.key.length === 1) { e.preventDefault(); focusInput(); }
   });
@@ -1060,6 +1306,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
 
   /* ---------- finishing ---------- */
   function nextFromResults() {
+    if (test.race) { location.hash = room ? "room=" + room.code : "room"; return; }
     if (test.code || test.quote) { fresh(); return; }
     newTest(test.source.kind === "mix" ? { ...plain(test.source), seed: undefined } : { kind: "normal" });
   }
@@ -1068,7 +1315,9 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     test.ended = true; clearInterval(ticker); clearTimeout(idleTimer);
     const secs = elapsed(t);
     raceResult(secs);
+    if (test.race) clearTimeout(test.race.goTimer);
     const r = analyse(test, secs);
+    if (test.race && test.startT != null) sendRun({ final: true, r, secs });
     document.body.classList.add("ended"); document.body.classList.remove("typing-now");
     input.blur(); stage.classList.remove("unfocused"); pencil.classList.add("idle");
     const s = test.source;
@@ -1192,6 +1441,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       if (gap > 0 && gap <= Math.max(2, change.previous.score * 0.05)) note += `<div class="note close">Just ${gap.toFixed(1)} short of your best (${change.previous.score.toFixed(1)}).</div>`;
     }
     if (!test.committed) note = `<div class="note">Nothing finished, so this one wasn't saved.</div>`;
+    if (test.race) badges += `<span class="rankup" id="racePlace">Waiting for the others…</span>`;
     const seal = clean && n >= 10 && !test.survival ? "Perfect" : test.survival && change?.isBest && n >= 10 ? "New best" : "";
     doneBand.innerHTML = `<div class="wrap doneIn">
       <div><div class="eyebrow">Galley ${no} · finished</div>
@@ -1262,7 +1512,8 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       <div class="qpanelacts">${heartBtn(q, "favRes")}</div>
       ${canReport ? `<div class="qreport" id="qrep"><button type="button" class="linkbtn" id="qrepOpen">Report this quote</button></div>` : ""}</div>` : "";
     const keepable = q && q.shared && !myQuotes.some((x) => x.text.toLowerCase() === q.text.toLowerCase());
-    const nextCard = q
+    const raceCards = test.race ? `<div class="card"><h3>Back to the room</h3><p>See the standings${room && room.data?.host === myUid() ? " and start the next race" : ", and wait for the next race"}.</p><button class="go primary" id="btnRoom">Room ${esc(test.race.code)} <kbd>tab</kbd></button></div>` : "";
+    const nextCard = test.race ? raceCards : q
       ? `<div class="card"><h3>Next quote</h3><p>Another ${cfg.quoteLen === "any" ? "" : cfg.quoteLen + " "}quote at random.</p><button class="go" id="btnNext">Start <kbd>tab</kbd></button></div>
          <div class="card"><h3>Type it again</h3><p>The same quote, now you know where it bites.</p><button class="go" id="btnAgain">Start <kbd>esc</kbd></button></div>
          ${keepable ? `<div class="card"><h3>Keep this quote</h3><p>Add it to your own quotes.</p><button class="go" id="btnKeep">Add to yours</button></div>` : ""}`
@@ -1271,6 +1522,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     during.hidden = true; after.hidden = false;
     after.innerHTML = `
       <div class="sheet">
+        ${test.race ? `<div class="panel"><h2>Race ${test.race.round} · room ${esc(test.race.code)}</h2><div id="raceTable"></div></div>` : ""}
         ${quotePanel}
         ${statBlock(r, `<div class="stat"><label>Best streak</label><b>${r.best}</b></div><div class="stat"><label>Fixes</label><b>${r.corrections}</b></div>`)}
         <div class="panels">
@@ -1294,8 +1546,10 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     $("#btnPractice").onclick = () => newTest({ kind: "practice", words: shuffleSpread(r.weak.flatMap((w) => [w.word, w.word, w.word]), mulberry32(randomSeed())), label: `Practice · ${r.weak.length} weak words ×3` });
     $("#btnMix").onclick = () => newTest({ kind: "mix", weak: mixWords, ratio: cfg.ratio });
     $("#btnDrill").onclick = () => { if (drill) newTest({ kind: "practice", words: drill.words, label: `Pair drill · ${drill.pairs.join(" ")}` }); };
-    $("#btnNext").onclick = nextFromResults;
+    $("#btnNext")?.addEventListener("click", nextFromResults);
+    $("#btnRoom")?.addEventListener("click", nextFromResults);
     $("#btnAgain")?.addEventListener("click", restart);
+    if (test.race) drawRaceResults();
     if (q) {
       const wireHeart = () => $("#favRes").addEventListener("click", () => {
         favourite(q);
@@ -1430,10 +1684,10 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       if (c) { newTest(challengeSource(c)); }
       else { notice = "That challenge link didn't work, so here's an ordinary galley."; newTest({ kind: "normal" }); }
     }
-    const page = location.hash === "#stats" ? "stats" : location.hash === "#boards" ? "boards" : location.hash === "#quotes" ? "quotes" : location.hash === "#edition" ? "edition" : null;
+    const page = location.hash === "#stats" ? "stats" : location.hash === "#boards" ? "boards" : location.hash === "#quotes" ? "quotes" : location.hash === "#edition" ? "edition" : location.hash.startsWith("#room") ? "room" : null;
     // both pages draw into the same view; the typing view hides behind either
     statsView.hidden = !page; typingView.hidden = !!page;
-    for (const id of ["openStats", "openBoards", "openQuotes"]) $("#" + id)?.classList.toggle("on", page === id.slice(4).toLowerCase() || (id === "openStats" && page === "edition"));
+    for (const id of ["openStats", "openBoards", "openQuotes", "openRoom"]) $("#" + id)?.classList.toggle("on", page === id.slice(4).toLowerCase() || (id === "openStats" && page === "edition"));
     const back = () => { location.hash = ""; };
     const boardHandlers = {
       signedIn: !!user,
@@ -1448,7 +1702,13 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
         return { ...p, entry };
       } : null
     };
-    if (page === "edition") {
+    if (page === "room") {
+      input.blur();
+      const want = readCode(location.hash.slice(6));
+      if (want && want !== room?.code && user && !roomBusy) joinRoom(want);
+      else drawRoom();
+      window.scrollTo(0, 0);
+    } else if (page === "edition") {
       input.blur();
       showEdition().then(() => window.scrollTo(0, 0));
     } else if (page === "quotes") {
