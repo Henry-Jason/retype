@@ -67,6 +67,25 @@ describe("rooms", () => {
   it("never grants writing a whole room in one go", async () => {
     await assertFails(set(ref(db("ana"), "rooms/KXQ7P"), { host: "ana", created: serverTimestamp(), settings, round: 0, state: "lobby" }));
   });
+  it("lists a public room in the lobby, written only by its host", async () => {
+    const r = "rooms/QK2RR/";
+    await assertSucceeds(update(ref(db("ana"), "/"), {
+      [r + "host"]: "ana", [r + "created"]: serverTimestamp(), [r + "settings"]: { ...settings, mode: "survival", lives: 3, floor: 30, quoteLen: "any" }, [r + "round"]: 0, [r + "state"]: "lobby", [r + "public"]: true,
+      [r + "players/ana"]: { name: "Ana", joined: serverTimestamp(), online: true },
+      "lobby/QK2RR": { mode: "survival", n: 1, state: "lobby", at: serverTimestamp() }
+    }));
+    await assertSucceeds(get(ref(db("ben"), "lobby")));
+    await assertFails(set(ref(db("ben"), "lobby/QK2RR"), { mode: "survival", n: 9, state: "lobby", at: serverTimestamp() }));
+    await assertSucceeds(set(ref(db("ana"), "lobby/QK2RR"), { mode: "survival", n: 2, state: "race", at: serverTimestamp() }));
+    await assertFails(set(ref(db("ana"), "rooms/QK2RR/public"), false)); // fixed when it's made
+    await assertFails(set(ref(db("cat"), "lobby/NOPE2"), { mode: "words", n: 1, state: "lobby", at: serverTimestamp() }));
+  });
+  it("lets the host put a quote in the room", async () => {
+    await made();
+    await assertSucceeds(set(ref(db("ana"), "rooms/KXQ7P/quote"), { id: "lib-1", text: "To be or not to be.", by: "Hamlet", source: "Hamlet" }));
+    await assertFails(set(ref(db("ben"), "rooms/KXQ7P/quote"), { id: "x", text: "Mine now." }));
+    await assertFails(set(ref(db("ana"), "rooms/KXQ7P/quote"), { id: "x", text: "a".repeat(2001) }));
+  });
   it("lets only the host take the room down", async () => {
     await made();
     await assertFails(remove(ref(db("ben"), "rooms/KXQ7P")));

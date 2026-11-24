@@ -215,7 +215,7 @@ export const forgetQuoteNames = onDocumentDeleted("users/{uid}", async (event) =
 
 /**
  * Friend rooms live in the Realtime Database and nobody deletes them when they leave, so rooms
- * made more than a day ago are cleared out every six hours.
+ * made more than a day ago are cleared out every six hours, with quick-race lobby entries an hour stale.
  */
 const ROOMS_DB = "https://retype-883ba-default-rtdb.europe-west1.firebasedatabase.app";
 export const clearOldRooms = onSchedule("every 6 hours", async () => {
@@ -224,5 +224,11 @@ export const clearOldRooms = onSchedule("every 6 hours", async () => {
   const gone = {};
   old.forEach((s) => { gone[s.key] = null; });
   if (Object.keys(gone).length) await rooms.update(gone);
-  logger.info("cleared old rooms", { count: Object.keys(gone).length });
+  // and lobby entries for public rooms nobody has touched in an hour
+  const lobby = getDatabase(undefined, ROOMS_DB).ref("lobby");
+  const stale = await lobby.orderByChild("at").endAt(Date.now() - 3600000).limitToFirst(500).get();
+  const dead = {};
+  stale.forEach((s) => { dead[s.key] = null; });
+  if (Object.keys(dead).length) await lobby.update(dead);
+  logger.info("cleared old rooms", { rooms: Object.keys(gone).length, lobby: Object.keys(dead).length });
 });

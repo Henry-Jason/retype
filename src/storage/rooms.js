@@ -1,7 +1,7 @@
 // Friend rooms on the Firebase Realtime Database: low-latency, and it can mark a player gone when
 // their connection drops. Loaded only when someone opens a room. The data's shape and the race
 // rules are in core/room.js; database.rules.json says who may write what.
-import { getDatabase, connectDatabaseEmulator, ref, get, set, update, remove, onValue, onDisconnect, serverTimestamp } from "firebase/database";
+import { getDatabase, connectDatabaseEmulator, ref, get, set, update, remove, onValue, onDisconnect, serverTimestamp, query, orderByChild, limitToLast } from "firebase/database";
 import { ROOM } from "../core/room.js";
 
 export function createRooms(app, { emulators = false } = {}) {
@@ -26,13 +26,15 @@ export function createRooms(app, { emulators = false } = {}) {
 
   return {
     serverNow: () => Date.now() + offset,
-    async create(code, { uid, name, settings }) {
-      // an update, not a set: the rules grant each field on its own, never the room as a whole.
-      // They refuse it if the code is already someone's room.
+    async create(code, { uid, name, settings, open = false }) {
+      // a multi-path update, not a set: the rules grant each field on its own, never the room as a
+      // whole. They refuse it if the code is already someone's room. A public room goes in the lobby too.
+      const r = `rooms/${code}/`;
       try {
-        await update(at(code), {
-          host: uid, created: serverTimestamp(), settings, round: 0, state: "lobby",
-          [`players/${uid}`]: { name, joined: serverTimestamp(), online: true }
+        await update(ref(db), {
+          [r + "host"]: uid, [r + "created"]: serverTimestamp(), [r + "settings"]: settings, [r + "round"]: 0, [r + "state"]: "lobby", [r + "public"]: open,
+          [r + `players/${uid}`]: { name, joined: serverTimestamp(), online: true },
+          ...(open ? { [`lobby/${code}`]: { mode: settings.mode, n: 1, state: "lobby", at: serverTimestamp() } } : {})
         });
       } catch { return { error: "taken" }; }
       stay(code, uid);
@@ -58,6 +60,13 @@ export function createRooms(app, { emulators = false } = {}) {
     /** Host only: settings, state, round, seed, startAt, entrants, host. */
     update: (code, patch) => update(at(code), patch),
     report: (code, round, uid, run) => set(at(code, `runs/${round}/${uid}`), run),
-    remove: (code) => remove(at(code))
+    remove: (code) => remove(at(code)),
+    /** Public rooms open for quick races: { code: { mode, n, state, at } }. */
+    async lobby() {
+      const s = await get(query(ref(db, "lobby"), orderByChild("at"), limitToLast(50)));
+      return s.exists() ? s.val() : {};
+    },
+    /** Host only: keep this room's lobby entry current, or take it out (null). */
+    list: (code, entry) => set(ref(db, `lobby/${code}`), entry ? { ...entry, at: serverTimestamp() } : null)
   };
 }

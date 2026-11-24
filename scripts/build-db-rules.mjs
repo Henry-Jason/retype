@@ -33,8 +33,11 @@ const rules = {
         settings: {
           ...hostOnly,
           ".validate": "newData.hasChildren(['mode', 'length', 'list', 'punct', 'nums'])",
-          mode: { ".validate": "newData.val() === 'words' || newData.val() === 'time'" },
+          mode: { ".validate": "newData.val() === 'words' || newData.val() === 'time' || newData.val() === 'quote' || newData.val() === 'survival'" },
           length: { ".validate": "newData.isNumber() && newData.val() >= 5 && newData.val() <= 1000" },
+          quoteLen: { ".validate": "newData.val() === 'any' || newData.val() === 'short' || newData.val() === 'medium' || newData.val() === 'long'" },
+          lives: { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 10" },
+          floor: { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 60" },
           list: { ".validate": "newData.val() === '200' || newData.val() === '1k' || newData.val() === '5k' || newData.val() === '10k'" },
           punct: { ".validate": "newData.isBoolean()" },
           nums: { ".validate": "newData.isBoolean()" },
@@ -44,6 +47,20 @@ const rules = {
         seed: { ...hostOnly, ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 4294967295" },
         startAt: { ...hostOnly, ".validate": "newData.isNumber() && newData.val() <= now + 60000" },
         state: { ...hostOnly, ".validate": "newData.val() === 'lobby' || newData.val() === 'race' || newData.val() === 'done'" },
+        // public rooms are listed for quick races; that's decided when the room is made
+        public: { ".write": `auth != null && !data.exists() && ${isHost}`, ".validate": "newData.isBoolean()" },
+        // public rooms: when the next race starts on its own
+        autoAt: { ...hostOnly, ".validate": "newData.isNumber() && newData.val() <= now + 120000" },
+        // a quote race: the quote, picked by the host's browser and typed by everyone
+        quote: {
+          ...hostOnly,
+          ".validate": "newData.hasChildren(['id', 'text'])",
+          id: { ".validate": "newData.isString() && newData.val().length <= 100" },
+          text: { ".validate": "newData.isString() && newData.val().length >= 2 && newData.val().length <= 2000" },
+          by: { ".validate": "newData.isString() && newData.val().length <= 80" },
+          source: { ".validate": "newData.isString() && newData.val().length <= 80" },
+          $other: { ".validate": false }
+        },
         entrants: { ...hostOnly, $uid: { ".validate": "newData.val() === true" } },
         players: {
           $uid: {
@@ -69,11 +86,26 @@ const rules = {
               done: { ".validate": "newData.isBoolean()" },
               secs: { ".validate": "newData.isNumber() && newData.val() >= 0" },
               score: { ".validate": "newData.isNumber() && newData.val() >= 0" },
+              l: { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 10" },
               at: { ".validate": "newData.isNumber()" },
               $other: { ".validate": false }
             }
           }
         },
+        $other: { ".validate": false }
+      }
+    },
+    // public rooms open for quick races, one entry each, written only by that room's host
+    lobby: {
+      ".read": "auth != null",
+      ".indexOn": ["at"],
+      $code: {
+        ".write": "auth != null && (root.child('rooms').child($code).child('host').val() === auth.uid || newData.parent().parent().child('rooms').child($code).child('host').val() === auth.uid)",
+        ".validate": "newData.hasChildren(['mode', 'n', 'state', 'at'])",
+        mode: { ".validate": "newData.val() === 'words' || newData.val() === 'time' || newData.val() === 'quote' || newData.val() === 'survival'" },
+        n: { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 50" },
+        state: { ".validate": "newData.val() === 'lobby' || newData.val() === 'race' || newData.val() === 'done'" },
+        at: { ".validate": "newData.val() === now" },
         $other: { ".validate": false }
       }
     }

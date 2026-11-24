@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { mulberry32 } from "../src/core/rng.js";
-import { ROOM, newCode, readCode, CODE_RE, roomSettings, settingsLabel, playerList, nextHost, runReport, roundOver, standings, ordinal } from "../src/core/room.js";
+import { ROOM, QUICK, raceOpts, pickOpenRoom, lobbyEntry, newCode, readCode, CODE_RE, roomSettings, settingsLabel, playerList, nextHost, runReport, roundOver, standings, ordinal } from "../src/core/room.js";
 
 const room = (over = {}) => ({
   host: "a", state: "race", round: 1, startAt: 1000, settings: { mode: "words", length: 25, list: "200" },
@@ -29,9 +29,15 @@ describe("friend rooms", () => {
   });
 
   it("only allows settings a room can race", () => {
-    expect(roomSettings({ mode: "time", length: 60, list: "5k", punct: 1 })).toEqual({ mode: "time", length: 60, list: "5k", punct: true, nums: false });
-    expect(roomSettings({ mode: "time", length: 37 })).toEqual({ mode: "time", length: 30, list: "200", punct: false, nums: false });
-    expect(roomSettings({ mode: "survival", length: 50, list: "450k" })).toEqual({ mode: "words", length: 50, list: "200", punct: false, nums: false });
+    const base = { quoteLen: "any", lives: 3, floor: 30 };
+    expect(roomSettings({ mode: "time", length: 60, list: "5k", punct: 1 })).toEqual({ ...base, mode: "time", length: 60, list: "5k", punct: true, nums: false });
+    expect(roomSettings({ mode: "time", length: 37 })).toEqual({ ...base, mode: "time", length: 30, list: "200", punct: false, nums: false });
+    expect(roomSettings({ mode: "flow", length: 50, list: "450k" })).toEqual({ ...base, mode: "words", length: 50, list: "200", punct: false, nums: false });
+    expect(roomSettings({ mode: "survival", lives: 10, floor: 60 })).toMatchObject({ mode: "survival", lives: 3, floor: 30 });
+    expect(settingsLabel(roomSettings({ mode: "survival", lives: 1, floor: 0 }))).toBe("survival · 1 life · no floor");
+    expect(settingsLabel(roomSettings({ mode: "quote", quoteLen: "long" }))).toBe("a quote · long");
+    expect(raceOpts(roomSettings({ mode: "survival", lives: 5, floor: 20 }))).toEqual({ mode: "survival", surv: { lives: 5, regen: false, floor: 20 }, punct: false, nums: false, sudden: false });
+    expect(raceOpts(roomSettings({ mode: "words", length: 50 }))).toMatchObject({ mode: "words", length: 50, list: "200" });
     expect(settingsLabel(roomSettings({ mode: "words", length: 50, list: "1k", nums: true }))).toBe("50 words · top 1,000 · numbers");
   });
 
@@ -82,6 +88,41 @@ describe("friend rooms", () => {
     expect(s[0].me).toBe(true);
     // nobody has sent anything yet: everyone's still listed, at the start
     expect(standings(room(), 1).map((x) => x.c)).toEqual([0, 0]);
+  });
+
+  it("puts survival's last one standing first", () => {
+    const r = room({ settings: QUICK.survival, entrants: { a: true, b: true, c: true } });
+    r.runs = { 1: {
+      a: { c: 300, w: 60, wpm: 70, acc: 95, done: true, score: 63 },   // out at 60 words
+      b: { c: 200, w: 40, wpm: 50, acc: 99, done: false },             // still going
+      c: { c: 310, w: 61, wpm: 72, acc: 96, done: true, score: 66 }    // out at 61
+    } };
+    expect(standings(r, 1).map((x) => x.name)).toEqual(["Ben", "Cat", "Ana"]);
+    r.runs[1].b.done = true; r.runs[1].b.score = 49;
+    expect(standings(r, 1).map((x) => x.name)).toEqual(["Cat", "Ana", "Ben"]);
+    expect(roundOver(r, 1000 + ROOM.wordsCapMs + 1)).toBe(true);
+    r.runs[1].b.done = false;
+    expect(roundOver(r, 1000 + ROOM.wordsCapMs + 1)).toBe(false); // survival gets longer, while Ben's behind
+    r.runs[1].b.w = 62;
+    expect(roundOver(r, 2000)).toBe(true); // last one standing, and past everyone
+  });
+
+  it("finds a quick race: the fullest open room of that kind", () => {
+    const now = 10_000_000;
+    const lobby = {
+      KXQ7P: { mode: "words", n: 2, state: "lobby", at: now - 1000 },
+      ABC23: { mode: "words", n: 5, state: "done", at: now - 5000 },
+      FXXRR: { mode: "words", n: ROOM.maxPlayers, state: "lobby", at: now },
+      TQMED: { mode: "time", n: 3, state: "lobby", at: now },
+      STAXE: { mode: "words", n: 4, state: "lobby", at: now - ROOM.lobbyFreshMs - 1 },
+      EMPTY: { mode: "words", n: 0, state: "lobby", at: now },
+      RACEZ: { mode: "words", n: 7, state: "race", at: now }
+    };
+    expect(pickOpenRoom(lobby, "words", now)).toBe("ABC23");
+    expect(pickOpenRoom(lobby, "time", now)).toBe("TQMED");
+    expect(pickOpenRoom(lobby, "quote", now)).toBe(null);
+    expect(pickOpenRoom({ RACEZ: lobby.RACEZ }, "words", now)).toBe("RACEZ"); // better than nothing: you're in the next one
+    expect(lobbyEntry(room(), 5)).toEqual({ mode: "words", n: 3, state: "race", at: 5 });
   });
 
   it("writes places", () => {

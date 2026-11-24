@@ -22,10 +22,19 @@
           ".write": "auth != null && (data.parent().child('host').val() === auth.uid || (!data.parent().exists() && newData.parent().child('host').val() === auth.uid))",
           ".validate": "newData.hasChildren(['mode', 'length', 'list', 'punct', 'nums'])",
           "mode": {
-            ".validate": "newData.val() === 'words' || newData.val() === 'time'"
+            ".validate": "newData.val() === 'words' || newData.val() === 'time' || newData.val() === 'quote' || newData.val() === 'survival'"
           },
           "length": {
             ".validate": "newData.isNumber() && newData.val() >= 5 && newData.val() <= 1000"
+          },
+          "quoteLen": {
+            ".validate": "newData.val() === 'any' || newData.val() === 'short' || newData.val() === 'medium' || newData.val() === 'long'"
+          },
+          "lives": {
+            ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 10"
+          },
+          "floor": {
+            ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 60"
           },
           "list": {
             ".validate": "newData.val() === '200' || newData.val() === '1k' || newData.val() === '5k' || newData.val() === '10k'"
@@ -55,6 +64,33 @@
         "state": {
           ".write": "auth != null && (data.parent().child('host').val() === auth.uid || (!data.parent().exists() && newData.parent().child('host').val() === auth.uid))",
           ".validate": "newData.val() === 'lobby' || newData.val() === 'race' || newData.val() === 'done'"
+        },
+        "public": {
+          ".write": "auth != null && !data.exists() && (data.parent().child('host').val() === auth.uid || (!data.parent().exists() && newData.parent().child('host').val() === auth.uid))",
+          ".validate": "newData.isBoolean()"
+        },
+        "autoAt": {
+          ".write": "auth != null && (data.parent().child('host').val() === auth.uid || (!data.parent().exists() && newData.parent().child('host').val() === auth.uid))",
+          ".validate": "newData.isNumber() && newData.val() <= now + 120000"
+        },
+        "quote": {
+          ".write": "auth != null && (data.parent().child('host').val() === auth.uid || (!data.parent().exists() && newData.parent().child('host').val() === auth.uid))",
+          ".validate": "newData.hasChildren(['id', 'text'])",
+          "id": {
+            ".validate": "newData.isString() && newData.val().length <= 100"
+          },
+          "text": {
+            ".validate": "newData.isString() && newData.val().length >= 2 && newData.val().length <= 2000"
+          },
+          "by": {
+            ".validate": "newData.isString() && newData.val().length <= 80"
+          },
+          "source": {
+            ".validate": "newData.isString() && newData.val().length <= 80"
+          },
+          "$other": {
+            ".validate": false
+          }
         },
         "entrants": {
           ".write": "auth != null && (data.parent().child('host').val() === auth.uid || (!data.parent().exists() && newData.parent().child('host').val() === auth.uid))",
@@ -106,6 +142,9 @@
               "score": {
                 ".validate": "newData.isNumber() && newData.val() >= 0"
               },
+              "l": {
+                ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 10"
+              },
               "at": {
                 ".validate": "newData.isNumber()"
               },
@@ -114,6 +153,31 @@
               }
             }
           }
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
+    "lobby": {
+      ".read": "auth != null",
+      ".indexOn": [
+        "at"
+      ],
+      "$code": {
+        ".write": "auth != null && (root.child('rooms').child($code).child('host').val() === auth.uid || newData.parent().parent().child('rooms').child($code).child('host').val() === auth.uid)",
+        ".validate": "newData.hasChildren(['mode', 'n', 'state', 'at'])",
+        "mode": {
+          ".validate": "newData.val() === 'words' || newData.val() === 'time' || newData.val() === 'quote' || newData.val() === 'survival'"
+        },
+        "n": {
+          ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 50"
+        },
+        "state": {
+          ".validate": "newData.val() === 'lobby' || newData.val() === 'race' || newData.val() === 'done'"
+        },
+        "at": {
+          ".validate": "newData.val() === now"
         },
         "$other": {
           ".validate": false

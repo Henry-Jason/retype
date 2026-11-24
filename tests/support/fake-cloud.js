@@ -94,7 +94,7 @@ export function createFakeCloud() {
 // tabs writing at once don't overwrite each other (as with separate paths in the real database).
 // No rules are enforced here; database.rules.json has its own tests.
 function createFakeRooms() {
-  const PRE = "retype-fake-room:";
+  const PRE = "retype-fake-room:", LOBBY = "retype-fake-lobby:";
   const unit = (parts) => parts.slice(0, parts[0] === "players" ? 2 : parts[0] === "runs" ? 3 : 1);
   const read = (k) => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } };
   function load(code) {
@@ -131,9 +131,10 @@ function createFakeRooms() {
   addEventListener("pagehide", () => { if (here) put(here.code, `players/${here.uid}/online`, false); });
   return {
     serverNow: () => Date.now(),
-    async create(code, { uid, name, settings }) {
+    async create(code, { uid, name, settings, open = false }) {
       if (load(code)) return { error: "taken" };
-      for (const [k, v] of Object.entries({ host: uid, created: Date.now(), settings, round: 0, state: "lobby" })) put(code, k, v);
+      for (const [k, v] of Object.entries({ host: uid, created: Date.now(), settings, round: 0, state: "lobby", public: open })) put(code, k, v);
+      if (open) localStorage.setItem(LOBBY + code, JSON.stringify({ mode: settings.mode, n: 1, state: "lobby", at: Date.now() }));
       put(code, `players/${uid}`, { name, joined: Date.now(), online: true });
       here = { code, uid }; done(); return { ok: true };
     },
@@ -158,6 +159,12 @@ function createFakeRooms() {
       done();
     },
     async report(code, round, uid, run) { put(code, `runs/${round}/${uid}`, run); done(); },
+    async lobby() {
+      const out = {};
+      for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k.startsWith(LOBBY)) out[k.slice(LOBBY.length)] = read(k); }
+      return out;
+    },
+    async list(code, entry) { if (entry) localStorage.setItem(LOBBY + code, JSON.stringify({ ...entry, at: Date.now() })); else localStorage.removeItem(LOBBY + code); },
     async remove(code) { for (let i = localStorage.length - 1; i >= 0; i--) { const k = localStorage.key(i); if (k?.startsWith(PRE + code + "/")) localStorage.removeItem(k); } done(); }
   };
 }
