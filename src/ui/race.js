@@ -70,7 +70,8 @@ export function renderRoom(view, ctx) {
     const { code, data } = ctx.room, me = ctx.me;
     const isHost = data.host === me, s = data.settings, open = !!data.public;
     const canSet = isHost && !open;
-    const players = playerList(data).filter((p) => p.online || data.entrants?.[p.uid]);
+    const players = playerList(data).filter((p) => !p.ghost && (p.online || data.entrants?.[p.uid]));
+    const humans = players.filter((p) => p.online).length;
     const racing = data.state === "race";
     const inRace = racing && !!data.entrants?.[me] && !data.runs?.[data.round]?.[me]?.done;
     const last = data.round > 0 ? standings(data, data.round, me) : [];
@@ -91,14 +92,18 @@ export function renderRoom(view, ctx) {
     const action = racing
       ? (inRace ? `<button type="button" class="go primary" id="roomRejoin">Back to the race</button>` : data.entrants?.[me] ? `<div class="sub">You've finished. Waiting for the others.</div>` : `<div class="sub">A race is on. You're in the next one.</div>`)
         + (isHost ? `<button type="button" class="go" id="roomEnd">End this race</button>` : "")
-      : open ? autoIn + (autoIn ? "" : `<div class="sub">Waiting for someone to join. The race starts on its own once there are two of you.</div>`) + (isHost && !autoIn ? `<button type="button" class="go" id="roomStart">Race on your own now</button>` : "")
+      : open && humans >= 2 ? autoIn || `<div class="sub">The next race starts on its own in a moment.</div>`
+      : open ? (data.autoAt
+          ? `<div class="sub">Nobody else here yet. In <b id="autoIn">${Math.max(0, Math.ceil((data.autoAt - ctx.serverNow()) / 1000))}</b>s you'll race ghosts: replays of real players' recent runs. Anyone who joins is in the next race.</div>`
+          : `<div class="sub">Nobody else here yet. Race ghosts of real players' runs while you wait, or on your own; anyone who joins is in the next race.</div>`)
+        + (isHost ? `<button type="button" class="go primary" id="roomGhosts">Race ghosts now <kbd>enter</kbd></button><button type="button" class="go" id="roomStart">Race on your own</button>` : "")
       : isHost ? `<button type="button" class="go primary" id="roomStart">${data.round ? "Start the next race" : "Start the race"} <kbd>enter</kbd></button>`
       : `<div class="sub">Waiting for ${esc(data.players?.[data.host]?.name || "the host")} to start the ${data.round ? "next " : ""}race.</div>`;
     view.innerHTML = head(`${open ? "Quick race · " : ""}Room <span class="roomcode">${esc(code)}</span>`, open ? `A public room: anyone doing a quick race of this kind can land here. ${racing ? "" : "Each race starts with a " + ROOM.countdownMs / 1000 + "-second countdown for everyone at once."}` : `Send the link, or read out the code. ${racing ? "" : "The race starts with a " + ROOM.countdownMs / 1000 + "-second countdown for everyone at once."}`) + `
       <div class="qtwo">
         <div class="scard"><h2>Invite</h2>
           <div class="sactions"><input class="chin" id="roomLink" readonly value="${esc(ctx.link)}"><button type="button" class="go" id="roomCopy">Copy link</button></div>
-          <h2>Players · ${players.filter((p) => p.online).length}/${ROOM.maxPlayers}</h2>
+          <h2>Players · ${humans}/${ROOM.maxPlayers}</h2>
           <ul class="players">${players.map((p) => `<li class="${p.online ? "" : "gone"}"><i class="dot ${p.online ? "synced" : ""}"></i>${esc(p.name)}${p.uid === me ? " <small>(you)</small>" : ""}${p.uid === data.host ? ` <span class="hosttag">host</span>` : ""}${p.online ? "" : " <small>left</small>"}</li>`).join("")}</ul>
         </div>
         <div class="scard"><h2>The galley</h2>
@@ -115,6 +120,7 @@ export function renderRoom(view, ctx) {
       catch { view.querySelector("#roomLink").select(); }
     };
     view.querySelector("#roomStart")?.addEventListener("click", ctx.onStart);
+    view.querySelector("#roomGhosts")?.addEventListener("click", ctx.onGhosts);
     view.querySelector("#roomEnd")?.addEventListener("click", ctx.onEnd);
     view.querySelector("#roomRejoin")?.addEventListener("click", ctx.onBack);
     view.querySelector("#roomLeave").onclick = ctx.onLeave;

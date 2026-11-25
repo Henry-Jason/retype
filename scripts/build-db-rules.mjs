@@ -51,6 +51,22 @@ const rules = {
         public: { ".write": `auth != null && !data.exists() && ${isHost}`, ".validate": "newData.isBoolean()" },
         // public rooms: when the next race starts on its own
         autoAt: { ...hostOnly, ".validate": "newData.isNumber() && newData.val() <= now + 120000" },
+        // quick races with nobody else around: ghosts every browser replays (see core/racers.js)
+        ghosts: {
+          ...hostOnly,
+          $gid: {
+            ".validate": "$gid.matches(/^g[0-9]$/) && newData.hasChildren(['name', 'wpm', 'acc'])",
+            name: { ".validate": "newData.isString() && newData.val().length <= 40" },
+            wpm: { ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() <= 400" },
+            acc: { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100" },
+            words: { ".validate": "newData.isNumber() && newData.val() >= 0" },
+            secs: { ".validate": "newData.isNumber() && newData.val() >= 0" },
+            pace: { ".validate": "newData.isBoolean()" },
+            keys: { ".validate": "newData.isString() && newData.val().length <= 200000" },
+            targets: { $i: { ".validate": "newData.isString() && newData.val().length <= 200" } },
+            $other: { ".validate": false }
+          }
+        },
         // a quote race: the quote, picked by the host's browser and typed by everyone
         quote: {
           ...hostOnly,

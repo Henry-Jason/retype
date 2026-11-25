@@ -20,6 +20,7 @@ export function buildResult({ id, userId, at, session, stats, meta }) {
     list: meta.list ?? null, punct: !!meta.punct, nums: !!meta.nums, sudden: !!meta.sudden,
     snippet: meta.snippet ?? null, seed: meta.seed ?? null,
     ...(meta.surv ? { surv: meta.surv } : {}), // survival: { lives, regen, floor, left }
+    ...(meta.lend === false ? { lend: false } : {}), // not to be raced as a quick-race ghost (core/racers.js)
     wpm: stats.wpm, raw: stats.raw, acc: stats.acc, score: score(stats.wpm, stats.acc),
     errors: stats.errors, fixes: stats.corrections, keyCount: stats.keys, secs: stats.secs,
     bestStreak: stats.best, wordsDone: meta.wordsDone, clean: stats.errors === 0 && stats.corrections === 0,

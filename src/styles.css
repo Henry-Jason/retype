@@ -596,3 +596,5 @@ body.focus.typing-now .lanes{opacity:.5}
 body.racing .hint-race{display:inline}
 body.racing .hint-solo{display:none}
 body.ended .lanes{display:none}
+.ghosty.rival.isghost{background:transparent;border-left:3px dotted var(--ink-muted);margin-left:-1.5px;width:0}
+.ghosty.rival::before{bottom:calc(100% + 3px + var(--row, 0) * 13px)}

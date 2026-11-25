@@ -73,6 +73,41 @@
           ".write": "auth != null && (data.parent().child('host').val() === auth.uid || (!data.parent().exists() && newData.parent().child('host').val() === auth.uid))",
           ".validate": "newData.isNumber() && newData.val() <= now + 120000"
         },
+        "ghosts": {
+          ".write": "auth != null && (data.parent().child('host').val() === auth.uid || (!data.parent().exists() && newData.parent().child('host').val() === auth.uid))",
+          "$gid": {
+            ".validate": "$gid.matches(/^g[0-9]$/) && newData.hasChildren(['name', 'wpm', 'acc'])",
+            "name": {
+              ".validate": "newData.isString() && newData.val().length <= 40"
+            },
+            "wpm": {
+              ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() <= 400"
+            },
+            "acc": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100"
+            },
+            "words": {
+              ".validate": "newData.isNumber() && newData.val() >= 0"
+            },
+            "secs": {
+              ".validate": "newData.isNumber() && newData.val() >= 0"
+            },
+            "pace": {
+              ".validate": "newData.isBoolean()"
+            },
+            "keys": {
+              ".validate": "newData.isString() && newData.val().length <= 200000"
+            },
+            "targets": {
+              "$i": {
+                ".validate": "newData.isString() && newData.val().length <= 200"
+              }
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
         "quote": {
           ".write": "auth != null && (data.parent().child('host').val() === auth.uid || (!data.parent().exists() && newData.parent().child('host').val() === auth.uid))",
           ".validate": "newData.hasChildren(['id', 'text'])",

@@ -19,6 +19,16 @@ export function createFakeCloud() {
     async getAccount(uid) { return load().accounts[uid] ?? null; },
     async foldAccount(uid, fn) { const d = load(); const next = fn(d.accounts[uid] ?? null); d.accounts[uid] = next; save(d); return next; },
     async putResult(uid, r) { const d = load(); d.results[uid] ??= {}; d.results[uid][r.id] ??= r; save(d); },
+    // ghosts as collectGhost would file them, from every fake player's saved galleys
+    async ghostPool(mode) {
+      const { poolEntry } = await import("../../src/core/racers.js");
+      const out = [];
+      for (const [uid, rs] of Object.entries(load().results || {})) {
+        const latest = Object.values(rs).map((r) => poolEntry({ uid, result: r, name: (load().profiles || {})[uid]?.name || "A typist", wpm: r.wpm, acc: r.acc, now: r.at })).filter((e) => e?.mode === mode).sort((a, b) => b.doc.at - a.doc.at)[0];
+        if (latest) out.push(latest.doc);
+      }
+      return out;
+    },
     async recentResults(uid, n) { return Object.values(load().results[uid] || {}).sort((a, b) => b.at - a.at).slice(0, n); },
     async getProfile(uid) { return (load().profiles || {})[uid] ?? null; },
     // like the setName Cloud Function: the server's name filter, and a fallback on request

@@ -5,7 +5,7 @@ export const DEFAULTS = {
   stop: "off", backspace: "on", sudden: false, ratio: 0.4,
   list: "200", punct: false, nums: false,
   focus: false, live: true, paceLine: true, margin: true, roll: true, sound: "off", errSound: false, bell: true,
-  indent: "auto", ghost: "best",
+  indent: "auto", ghost: "best", lendGhosts: true,
   survLives: 3, survRegen: false, survFloor: 30,
   pencil: "red", paper: "thermal", ink: "pencil",
   quoteFrom: "all", quoteLen: "any", quoteSource: null, quoteClean: false, quoteFavs: false
@@ -48,6 +48,7 @@ export const SETTINGS = [
   { key: "margin", label: "Corrections margin", options: [[true, "Show"], [false, "Hide"]] },
   { key: "paceLine", label: "Progress line", help: "A thin line along the paper: time left in a timed galley, how far through a word galley, or how close you are to your best survival run. It turns green when you're on course to beat your best and red when you're behind it.", options: [[true, "Show"], [false, "Hide"]] },
   { key: "ghost", label: "Ghost", help: "A faint second caret replaying your best run of the same kind (same length and word list, script or quote length), so you can see whether you're ahead. Racing a run from its results always brings its ghost.", options: [["best", "Your best"], ["off", "Off"]], restart: true },
+  { key: "lendGhosts", label: "Lend your runs as ghosts", help: "When you're signed in, your latest 25-word, 30-second, short-quote and survival runs can be raced as ghosts in quick races by players who'd otherwise be alone, with your board name on them. Only galleys finished while this is on are lent.", options: [[true, "Yes"], [false, "No"]] },
   { key: "roll", label: "Till roll while typing", help: "The receipt still prints at the end.", options: [[true, "Show"], [false, "Hide"]] },
   { key: "sound", label: "Key sound", options: [["off", "Off"], ["click", "Click"], ["type", "Typewriter"]] },
   { key: "errSound", label: "Error sound", options: [[false, "Off"], [true, "On"]] },

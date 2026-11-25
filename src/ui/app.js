@@ -23,6 +23,7 @@ import { headline, featById } from "../core/feats.js";
 import { cleanName, fromCloud, defaultName } from "../core/sync.js";
 import { ROOM, QUICK, readCode, newCode, roomSettings, raceOpts, settingsLabel, nextHost, runReport, roundOver, standings, pickOpenRoom, lobbyEntry, ordinal as placeName } from "../core/room.js";
 import { renderRoom, standingsTable, lanesHtml } from "./race.js";
+import { GHOSTS, raceGhosts, withGhosts } from "../core/racers.js";
 import { ghostTimeline, charsAt, place, leadSecs, fmtLead, wordStarts } from "../core/ghost.js";
 import { $, esc, pad, stampDate, uuid } from "./util.js";
 import { pickQuote, words as quoteWords, LENGTHS as QUOTE_LENGTHS, addQuotes } from "../core/quotes.js";
@@ -742,7 +743,8 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     if (!location.hash.startsWith("#room")) return;
     renderRoom(statsView, {
       enabled: accountsEnabled && !!cloud?.rooms, signedIn: !!user, me: myUid(), busy: roomBusy, error: roomError,
-      room: room?.data ? { code: room.code, data: room.data } : null, link: room ? roomLink(room.code) : "",
+      room: room?.data ? { code: room.code, data: roomView(room.data) } : null, link: room ? roomLink(room.code) : "",
+      onGhosts: () => startRound({ ghosts: true }),
       lobby: lobbyCounts, serverNow: () => room?.api.serverNow() ?? Date.now(), onQuick: quickRace,
       onSignIn: signIn, onCreate: makeRoom, onJoin: (raw) => { const c = readCode(raw); if (c) location.hash = "room=" + c; else { roomError = "That doesn't look like a room code: 5 letters and numbers."; drawRoom(); } },
       onLeave: async () => { await leaveRoom(); if (location.hash === "#room") drawRoom(); else location.hash = "room"; },
@@ -834,9 +836,11 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
   function hostDuties() {
     const d = room?.data; if (!d) return;
     const t = room.api.serverNow(), el = $("#autoIn");
+    if (test?.race && test.ended && d.ghosts) drawRaceResults(); // ghosts still running after you finished
+    if (d.ghosts && location.hash.startsWith("#room")) drawRoom();
     if (el && d.autoAt) el.textContent = Math.max(0, Math.ceil((d.autoAt - t) / 1000));
     if (d.host !== myUid()) return;
-    if (d.state === "race" && roundOver(d, t)) { room.api.update(room.code, { state: "done" }).catch(() => {}); return; }
+    if (d.state === "race" && roundOver(roomView(d), t)) { room.api.update(room.code, { state: "done" }).catch(() => {}); return; }
     if (!d.public) return;
     const entry = lobbyEntry(d, 0), key = `${entry.mode} ${entry.n} ${entry.state}`;
     if (key !== room.listed || t - (room.listedAt || 0) > 10 * 60e3) {
@@ -848,8 +852,12 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       if (!d.autoAt) room.api.update(room.code, { autoAt: Math.round(t + ROOM.autoStartMs) }).catch(() => {});
       else if (t >= d.autoAt) startRound();
     } else {
-      if (d.autoAt) room.api.update(room.code, { autoAt: null }).catch(() => {});
-      // on your own: if someone else opened a room of this kind at the same moment, join up
+      // on your own in a new room: a short wait for real players, then ghosts of real players' runs
+      if (d.state === "lobby" && !room.ghosted) {
+        if (!d.autoAt) room.api.update(room.code, { autoAt: Math.round(t + GHOSTS.waitMs) }).catch(() => {});
+        else if (t >= d.autoAt) { room.ghosted = true; startRound({ ghosts: true }); }
+      } else if (d.autoAt) room.api.update(room.code, { autoAt: null }).catch(() => {});
+      // if someone else opened a room of this kind at the same moment, join up
       if (t - (room.hopAt || 0) > 4000) { room.hopAt = t; hop(d); }
     }
   }
@@ -892,9 +900,25 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       if (!room) drawRoom();
     } catch { /* fine: no counts */ }
   }
-  async function startRound() {
+  // The room with this round's ghosts racing in it, as of now (see core/racers.js).
+  const ghostTracks = new Map(); let ghostKey = "";
+  function roomView(d) {
+    if (!d?.ghosts || !room) return d;
+    const key = `${room.code}:${d.round}`;
+    if (key !== ghostKey) { ghostTracks.clear(); ghostKey = key; }
+    const s = d.settings, mine = test?.race && test.race.code === room.code && test.race.round === d.round;
+    if (mine) syncStarts();
+    const total = s.mode === "time" || s.mode === "survival" ? Infinity : mine ? test.starts[test.targets.length] - 1 : (s.mode === "quote" ? 100 : s.length * 6);
+    return withGhosts(d, room.api.serverNow() - d.startAt, ghostTracks, { mode: s.mode, total, limitMs: s.mode === "time" ? s.length * 1000 : Infinity });
+  }
+  // About how fast you type, to pick ghosts you can race: your recent word and time galleys.
+  function myPace() {
+    const rs = state.recent.filter((r) => (r.mode === "words" || r.mode === "time") && r.wpm > 0).slice(0, 10);
+    return rs.length ? rs.reduce((a, r) => a + r.wpm, 0) / rs.length : 40;
+  }
+  async function startRound({ ghosts: withG = false } = {}) {
     const d = room?.data;
-    if (!d || d.host !== myUid() || d.state === "race") return;
+    if (!d || d.host !== myUid() || d.state === "race" || room.starting) return;
     const entrants = Object.fromEntries(Object.entries(d.players || {}).filter(([, p]) => p.online).map(([uid]) => [uid, true]));
     // a quote race: this browser picks one everyone can have (the library or approved shared ones, never your private quotes)
     let quote = null;
@@ -903,7 +927,13 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       quote = { id: q.id, text: q.text, by: q.by || "", source: q.source || "" };
     }
     room.starting = true;
-    await room.api.update(room.code, { round: (d.round || 0) + 1, seed: randomSeed(), startAt: Math.round(room.api.serverNow() + ROOM.countdownMs), state: "race", entrants, quote, autoAt: null })
+    // ghosts: real players' recent runs of this kind, near your speed, topped up with house ghosts
+    let ghosts = null;
+    if (withG) {
+      const pool = cloud?.ghostPool ? await cloud.ghostPool(d.settings.mode).catch(() => []) : [];
+      ghosts = raceGhosts({ pool, mode: d.settings.mode, me: myUid(), wpm: myPace(), rand: mulberry32(randomSeed()) });
+    }
+    await room.api.update(room.code, { round: (d.round || 0) + 1, seed: randomSeed(), startAt: Math.round(room.api.serverNow() + ROOM.countdownMs), state: "race", entrants, quote, ghosts, autoAt: null })
       .catch((e) => { roomError = "Couldn't start the race."; console.warn(e); drawRoom(); })
       .finally(() => { if (room) room.starting = false; });
   }
@@ -927,6 +957,8 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     tick();
     lanes.hidden = false;
     drawRivals();
+    // ghosts move between room updates, so redraw them on a timer
+    if (room?.data?.ghosts) test.race.ghostTick = setInterval(() => { if (!test.ended && test.startT != null) drawRivals(); }, 120);
   }
   function go() {
     if (!test.race || test.startT != null) return;
@@ -938,7 +970,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     focusInput();
   }
   function stopRace() {
-    if (test?.race) { clearTimeout(test.race.cdTimer); clearTimeout(test.race.goTimer); clearTimeout(test.race.sendTimer); }
+    if (test?.race) { clearTimeout(test.race.cdTimer); clearTimeout(test.race.goTimer); clearTimeout(test.race.sendTimer); clearInterval(test.race.ghostTick); }
     countdown.hidden = true; lanes.hidden = true; document.body.classList.remove("racing");
     for (const el of rivalEls.values()) el.remove();
     rivalEls = new Map();
@@ -968,7 +1000,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
   }
   // Everyone else as a named caret on your galley, and as lanes above it.
   function drawRivals() {
-    const d = room?.data; if (!d || !test.race) return;
+    const d = roomView(room?.data); if (!d || !test.race) return;
     const runs = d.runs?.[test.race.round] || {}, me = myUid();
     let far = 0;
     for (const uid of Object.keys(d.entrants || {})) {
@@ -978,9 +1010,12 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       let el = rivalEls.get(uid);
       if (!el) { el = document.createElement("div"); el.className = "ghosty rival"; el.setAttribute("aria-hidden", "true"); rivalEls.set(uid, el); }
       if (el.parentNode !== track) track.appendChild(el);
-      el.dataset.who = d.players?.[uid]?.name || "Someone";
+      // short names, on staggered rows, so carets bunched together stay readable
+      el.dataset.who = (d.players?.[uid]?.name || "Someone").replace(/ · ghost$/, "").replace(/^(the|a) /i, "").slice(0, 14);
+      el.style.setProperty("--row", String(rivalEls.size > 1 ? [...rivalEls.keys()].indexOf(uid) % 3 : 0));
       el.classList.toggle("done", !!run.done);
       el.classList.toggle("gone", !d.players?.[uid]?.online);
+      el.classList.toggle("isghost", !!d.players?.[uid]?.ghost);
       growTo(far);
       caretAt(el, run.c);
     }
@@ -1001,7 +1036,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     if (grew) measure();
   }
   function drawLanes(mine = null) {
-    const d = room?.data; if (!d || !test.race || lanes.hidden) return;
+    const d = roomView(room?.data); if (!d || !test.race || lanes.hidden) return;
     const me = myUid(), round = test.race.round;
     const local = mine || (test.startT != null ? runReport({ chars: myChars(), words: test.committed, ...liveNumbers(), lives: test.survival ? test.lives : null, at: 0 }) : null);
     const view = local ? { ...d, runs: { ...d.runs, [round]: { ...(d.runs?.[round] || {}), [me]: { ...(d.runs?.[round]?.[me] || {}), ...local, done: d.runs?.[round]?.[me]?.done || false } } } } : d;
@@ -1011,7 +1046,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
   }
   // After you finish: the standings as they come in, and where you placed once everyone's done.
   function drawRaceResults() {
-    const d = room?.data; if (!d || !test.race) return;
+    const d = roomView(room?.data); if (!d || !test.race) return;
     const rows = standings(d, test.race.round, myUid());
     const box = $("#raceTable");
     if (box) box.innerHTML = standingsTable(rows, d.settings, { live: d.state === "race" && d.round === test.race.round }) + `<div class="sub">${d.settings.mode === "survival" ? "Last one standing wins; the rest go by words survived." : "Placed by score (wpm × accuracy²); ties go to the quicker finish."}</div>`;
@@ -1363,7 +1398,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     if (drawerOpen) { if (e.key === "Escape") { e.preventDefault(); closeSettings(); } return; }
     if (!statsView.hidden) {
       if (e.key === "Escape" && !/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) { e.preventDefault(); location.hash = ""; }
-      else if (e.key === "Enter" && e.target.tagName !== "INPUT" && e.target.tagName !== "BUTTON" && $("#roomStart")) { e.preventDefault(); $("#roomStart").click(); }
+      else if (e.key === "Enter" && e.target.tagName !== "INPUT" && e.target.tagName !== "BUTTON" && ($("#roomGhosts") || $("#roomStart"))) { e.preventDefault(); ($("#roomGhosts") || $("#roomStart")).click(); }
       return;
     }
     if (document.activeElement === input || e.target.tagName === "INPUT") return;
@@ -1390,7 +1425,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     test.ended = true; clearInterval(ticker); clearTimeout(idleTimer);
     const secs = elapsed(t);
     raceResult(secs);
-    if (test.race) clearTimeout(test.race.goTimer);
+    if (test.race) { clearTimeout(test.race.goTimer); clearInterval(test.race.ghostTick); }
     const r = analyse(test, secs);
     if (test.race && test.startT != null) sendRun({ final: true, r, secs });
     document.body.classList.add("ended"); document.body.classList.remove("typing-now");
@@ -1403,7 +1438,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
         length: test.code || test.quote || s.kind === "practice" ? test.targets.length : test.opts.mode === "time" ? test.opts.length : test.opts.mode === "words" ? test.targets.length : null,
         list: test.code || test.quote || test.survival ? null : test.opts.list,
         surv: test.survival ? { ...test.opts.surv, left: test.lives } : null, punct: !test.code && !test.quote && !!test.opts.punct, nums: !test.code && !test.quote && !!test.opts.nums, sudden: test.sudden,
-        snippet: test.code ? test.snippet.id : test.quote ? test.quote.id : null, seed: test.seed, wordsDone: test.committed
+        snippet: test.code ? test.snippet.id : test.quote ? test.quote.id : null, seed: test.seed, wordsDone: test.committed, lend: cfg.lendGhosts !== false
       }
     });
     test.lastResult = result;

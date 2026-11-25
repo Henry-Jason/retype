@@ -81,6 +81,12 @@ service cloud.firestore {
       allow delete: if isOwner(uid);
     }
 
+    // quick-race ghosts: replays of players' recent runs, written only by the collectGhost function
+    match /ghosts/{mode}/runs/{uid} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
     match /boards/{board}/entries/{uid} {
       allow read: if true;
       allow write: if false;

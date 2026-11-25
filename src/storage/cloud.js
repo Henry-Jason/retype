@@ -68,6 +68,10 @@ export async function createCloud(config, { emulators = false } = {}) {
       const s = await F.getDoc(result(uid, id));
       return s.exists() ? s.data() : null;
     },
+    /** The latest quick-race ghosts of a kind (see core/racers.js). */
+    async ghostPool(mode, n = 40) {
+      return rows(await F.getDocs(F.query(F.collection(db, "ghosts", mode, "runs"), F.orderBy("at", "desc"), F.limit(n))));
+    },
     async recentResults(uid, n) {
       const snap = await F.getDocs(F.query(results(uid), F.orderBy("at", "desc"), F.limit(n)));
       return snap.docs.map((d) => d.data());

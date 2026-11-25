@@ -11,6 +11,8 @@ import { boardEntry, survivalEntry, DAY_MS } from "./board.js";
 import { ppPlay, nextEntry } from "./pp.js";
 import { screenQuote, submission, existingVerdict, countToday, review, report, sharedId, SHARE_RULES, limitsFor, screenName, safeName, fallbackName } from "./shared/core/moderation.js";
 import { onValueWritten } from "firebase-functions/v2/database";
+import { poolEntry } from "./shared/core/racers.js";
+import { verifyForBoard } from "./shared/core/verify.js";
 
 initializeApp();
 // europe-west1 sits beside the eur3 Firestore database; the cap keeps a runaway from costing money
@@ -102,9 +104,27 @@ export const backfillPp = onCall(async (req) => {
   return { pp: entry.pp, count: entry.count, already: false };
 });
 
-/** Clearing progress deletes the account document; the board entry goes with it. */
+/** Clearing progress deletes the account document; the board entry and any ghosts go with it. */
 export const clearPp = onDocumentDeleted("users/{uid}", async (event) => {
-  await ppRef(event.params.uid).delete();
+  const uid = event.params.uid;
+  await ppRef(uid).delete();
+  await Promise.all(["words", "time", "quote", "survival"].map((m) => db.doc(`ghosts/${m}/runs/${uid}`).delete()));
+});
+
+/**
+ * Ghosts for quick races: a finished galley of a quick-race kind (25 words, 30 seconds, a short
+ * quote or standard survival), checked from its keystrokes, becomes that player's ghost of that
+ * kind (their latest replaces the one before). Players can opt out in Settings ("lend: false").
+ */
+export const collectGhost = onDocumentCreated("users/{uid}/results/{rid}", async (event) => {
+  const result = event.data?.data();
+  if (!result) return;
+  const { uid, rid } = event.params;
+  if (result.userId !== uid || result.id !== rid) return;
+  const v = verifyForBoard(result);
+  if (!v.ok) return;
+  const e = poolEntry({ uid, result, name: await nameOf(uid), wpm: v.wpm, acc: v.acc, now: Date.now() });
+  if (e) await db.doc(`ghosts/${e.mode}/runs/${uid}`).set(e.doc);
 });
 
 /**
