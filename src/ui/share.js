@@ -104,6 +104,6 @@ export function drawRankCard({ name, rank, pp, next, date }) {
   y += 70; g.font = `700 54px "Courier Prime", monospace`; g.fillText(`${Math.round(pp).toLocaleString("en-IE")} PP`, W / 2, y);
   y += 44; g.font = serif(18, 400); g.fillStyle = C.muted;
   g.fillText(next ? `Next: ${next.name}, at ${next.min.toLocaleString("en-IE")} PP` : "The top of the masthead.", W / 2, y);
-  g.font = `400 13px "Overpass Mono", monospace`; g.fillText("retype.web.app", W / 2, H - 76);
+  g.font = `400 13px "Overpass Mono", monospace`; g.fillText("corratype.com", W / 2, H - 76);
   return cv;
 }
