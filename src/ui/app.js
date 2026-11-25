@@ -1185,7 +1185,8 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       if (e.key === "Tab" || e.key === "Escape" || test.startT == null) { e.preventDefault(); return; }
     }
     if (e.key === "Tab") { e.preventDefault(); test.ended ? nextFromResults() : fresh(); return; }
-    if (test.ended) { if (e.key === "Enter") { e.preventDefault(); $("#btnPractice")?.click(); } else if (e.key === "Escape" && test.quote && !test.race) { e.preventDefault(); restart(); } return; }
+    // finished: a space typed out of habit (or any letter) mustn't scroll the page away from the results
+    if (test.ended) { if (e.key === "Enter") { e.preventDefault(); $("#btnPractice")?.click(); } else if (e.key === "Escape" && test.quote && !test.race) { e.preventDefault(); restart(); } else if (e.key === " ") e.preventDefault(); return; }
     if (e.key === "Escape") { e.preventDefault(); if (test.flow) { if (test.committed) finish(); } else restart(); return; }
     if (e.repeat) { e.preventDefault(); return; }
     if (e.metaKey || (e.ctrlKey && e.key !== "Backspace") || (e.altKey && e.key !== "Backspace")) return;
@@ -1404,7 +1405,8 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     if (document.activeElement === input || e.target.tagName === "INPUT") return;
     if (e.target.tagName === "BUTTON" && (e.key === "Enter" || e.key === " ")) return;
     if (e.key === "Tab") { e.preventDefault(); if (test.race && !test.ended) return; test.ended ? nextFromResults() : fresh(); return; }
-    if (test.ended) { if (e.key === "Enter") { e.preventDefault(); $("#btnPractice")?.click(); } else if (e.key === "Escape" && test.quote && !test.race) { e.preventDefault(); restart(); } return; }
+    // finished: a space typed out of habit (or any letter) mustn't scroll the page away from the results
+    if (test.ended) { if (e.key === "Enter") { e.preventDefault(); $("#btnPractice")?.click(); } else if (e.key === "Escape" && test.quote && !test.race) { e.preventDefault(); restart(); } else if (e.key === " ") e.preventDefault(); return; }
     if (!e.metaKey && !e.ctrlKey && e.key.length === 1) { e.preventDefault(); focusInput(); }
   });
   addEventListener("resize", () => {
