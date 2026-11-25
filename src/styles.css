@@ -616,3 +616,69 @@ body.ended .lanes{display:none}
 header.wrap{transition:opacity .4s}
 body.quiet:not(.ended) header.wrap{opacity:.12}
 body.quiet header.wrap:hover{opacity:1}
+
+/* finish band: the rest under Details; the once-only accuracy hint; your rival */
+.done details.more{margin-top:10px}
+.done details.more summary{cursor:pointer;font:600 12px var(--ui);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-muted);list-style:none}
+.done details.more summary::-webkit-details-marker{display:none}
+.done details.more summary::before{content:"+ "}
+.done details.more[open] summary::before{content:"− "}
+.done .note.hint{color:var(--ink);background:var(--rule);padding:8px 12px;border-radius:6px;max-width:62ch}
+.done .note.rivalline b{color:var(--ink)}
+/* a piece of type, on the band */
+.clip.sortclip{display:flex;flex-direction:column;align-items:flex-start;text-decoration:none}
+.clip .sortpiece{font:700 44px/1 "Courier Prime",monospace;display:inline-block;background:linear-gradient(#b9b2a3,#8d8678);color:transparent;-webkit-background-clip:text;background-clip:text;margin:4px 0}
+.clip.sortclip.rare{outline:2px solid #c9971f;outline-offset:-5px}
+/* the type case on Stats: mirrored metal sorts in a wooden case */
+.typecase{display:grid;grid-template-columns:repeat(auto-fill,minmax(44px,1fr));gap:4px;background:#6b4a2b;padding:8px;border-radius:6px}
+.typecase .sort{position:relative;height:44px;display:grid;place-items:center;background:#4a3220;border-radius:3px;font:700 24px "Courier Prime",monospace;color:#d8d0bf;box-shadow:inset 0 2px 4px rgba(0,0,0,.5)}
+.typecase .sort .ghostl{opacity:.22}
+.typecase .sort.got{background:#8a6a48;color:#2a2116;text-shadow:0 1px 0 rgba(255,255,255,.25)}
+.typecase .sort.rare.got{background:#c9a24a}
+.typecase .sort:not(.got).rare{box-shadow:inset 0 2px 4px rgba(0,0,0,.5),inset 0 0 0 1px #c9a24a}
+.typecase .sort i{position:absolute;right:3px;bottom:1px;font:600 10px var(--ui);font-style:normal;color:#2a2116;opacity:.7}
+.caserows{display:flex;flex-wrap:wrap;gap:6px 22px;font-size:13px;color:var(--ink-muted)}
+.caserows b{color:var(--ink)}
+.caserows .done b{color:var(--pencil)}
+/* little marks of approval beside the perfect seal */
+.flourish{flex:none;color:var(--pencil);opacity:.85;transform:rotate(-8deg);animation:inkin .5s .5s both}
+.flourish.ring{width:86px;height:86px;border-radius:50%;border:6px solid rgba(120,80,40,.28);box-shadow:inset 0 0 0 3px rgba(120,80,40,.14);opacity:1}
+.flourish.okprint,.flourish.stet{font:800 14px var(--ui);letter-spacing:.16em;text-transform:uppercase;border:2.5px solid currentColor;padding:6px 10px;border-radius:4px}
+.flourish.stet{font:italic 700 26px var(--hand);text-transform:none;letter-spacing:0;border-style:double;border-width:4px}
+.flourish.fist,.flourish.aster{font-size:46px;line-height:1}
+.flourish.reg{color:var(--ink-muted)}
+@keyframes inkin{from{opacity:0;transform:rotate(-8deg) scale(1.6)}}
+@media (prefers-reduced-motion:reduce){.flourish{animation:none}}
+/* a promotion: a front page over everything */
+.ceremony{position:fixed;inset:0;z-index:50;display:grid;place-items:center;background:rgba(10,12,16,.62);animation:fadein .25s}
+.cpage{background:#f7f3ea;color:#1d1b17;width:min(560px,calc(100% - 40px));padding:30px 36px 28px;box-shadow:0 20px 60px rgba(0,0,0,.4);text-align:center;animation:stampin .45s .1s both}
+.cmast{font:700 40px/1 Georgia,"Times New Roman",serif}
+.crule{height:5px;border-top:2px solid #1d1b17;border-bottom:1px solid #1d1b17;margin:12px 0 18px}
+.ckicker{font:700 12px var(--ui);letter-spacing:.2em;text-transform:uppercase;color:#c8322b}
+.cpage h2{font:700 34px/1.15 Georgia,"Times New Roman",serif;margin:8px 0 10px}
+.cpage p{font:italic 17px Georgia,serif;color:#4b463d;margin:0 0 18px}
+.cfacts{display:flex;justify-content:center;gap:24px;flex-wrap:wrap;font:14px var(--ui);color:#4b463d;margin-bottom:22px}
+.cfacts b{color:#1d1b17}
+.cpage .sactions{justify-content:center}
+.cpage .go{color:#1d1b17;border-color:#b9b2a3;background:transparent}
+.cpage .go.primary{background:#c8322b;border-color:#c8322b;color:#fff}
+@keyframes fadein{from{opacity:0}}
+@keyframes stampin{from{opacity:0;transform:scale(1.15) rotate(-2deg)}}
+@media (prefers-reduced-motion:reduce){.ceremony,.cpage{animation:none}}
+/* the race podium */
+.podium{margin:4px 0 16px}
+.pmast{font:700 18px Georgia,"Times New Roman",serif;border-top:2px solid var(--ink);border-bottom:1px solid var(--ink);padding:6px 0;margin-bottom:14px;text-align:center}
+.psteps{display:flex;justify-content:center;align-items:flex-end;gap:10px}
+.pstep{width:min(30%,170px);text-align:center}
+.pname{font:700 15px var(--ui);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pwhat{font:13px "Courier Prime",monospace;color:var(--ink-muted);margin:2px 0 6px}
+.pblock{display:grid;place-items:center;background:var(--chip);color:var(--ink);font:700 28px "Courier Prime",monospace;border-radius:4px 4px 0 0}
+.p1 .pblock{height:92px;background:#c9a24a;color:#2a2116}
+.p2 .pblock{height:64px}
+.p3 .pblock{height:44px}
+.pstep.me .pname{color:var(--pencil)}
+/* first visit */
+.welcome{background:var(--paper);border:1px solid var(--desk-line);border-radius:8px;padding:16px 20px;color:var(--ink);max-width:640px}
+.welcome h2{margin:0 0 8px;font:700 16px var(--ui)}
+.welcome ul{margin:0 0 12px;padding-left:18px;display:flex;flex-direction:column;gap:4px;font-size:14px;line-height:1.45}
+.welcome .sub{font-size:13px;color:var(--ink-muted);margin-left:8px}

@@ -8,6 +8,8 @@ import { esc, fmtDuration } from "./util.js";
 import { levelFrom, XP_RULES } from "../core/levels.js";
 import { survivalLabel } from "../core/survival.js";
 import { FEATS, headline } from "../core/feats.js";
+import { ALL_SORTS, ROWS, rarity, rowsDone } from "../core/typecase.js";
+import { UNLOCKS } from "../core/unlocks.js";
 
 export function resultLabel(r) {
   if (r.kind === "code") return `code · ${SNIPPETS.find((s) => s.id === r.snippet)?.title || r.snippet}`;
@@ -108,6 +110,24 @@ function scrapbook(feats) {
     <div class="clips book">${held.map(clip).join("")}${open.map(blank).join("")}</div></div>`;
 }
 
+/** The type case: every piece you can find, the ones you have, and what each row unlocks. */
+function typeCase(tc = {}) {
+  const have = ALL_SORTS.filter((s) => tc[s]).length, done = new Set(rowsDone(tc));
+  const reward = (row) => Object.values(UNLOCKS).flat().find((u) => u.row === row);
+  const cell = (s) => `<span class="sort ${rarity(s)}${tc[s] ? " got" : ""}" title="${tc[s] ? `${tc[s]} × ${s}` : "Not found yet"}${rarity(s) === "rare" ? " · rare" : ""}">${tc[s] ? esc(s) : `<span class="ghostl">${esc(s)}</span>`}${tc[s] > 1 ? `<i>${tc[s]}</i>` : ""}</span>`;
+  return `<div class="scard wide"><h2>The type case</h2>
+    <div class="sub">${have} of ${ALL_SORTS.length} sorts found. Every perfect galley of 25 words or more (no mistakes, nothing fixed) drops one piece of type; the rare ones turn up about one time in twelve.</div>
+    <div class="typecase">${ALL_SORTS.map(cell).join("")}</div>
+    <div class="caserows">${ROWS.map((r) => `<div class="${done.has(r.id) ? "done" : ""}"><b>${esc(r.label)}</b> <span>${r.sorts.filter((s) => tc[s]).length}/${r.sorts.length}</span> <small>${done.has(r.id) ? "Unlocked: " : "Unlocks "}${esc(reward(r.id)?.label || "")}</small></div>`).join("")}</div></div>`;
+}
+
+/** Races: played, won, podiums and the best winning run. */
+function raceCard(r) {
+  if (!r?.played) return `<a class="scard edlink" href="#room"><h2>Races</h2><div class="big">None yet →</div><div class="sub">Quick races with whoever's around, or a room for friends.</div></a>`;
+  return `<a class="scard edlink" href="#room"><h2>Races</h2><div class="big">${r.wins} ${r.wins === 1 ? "win" : "wins"}</div>
+    <div class="sub">${r.played} raced · ${r.podiums} on the podium · best run ${r.best} ${r.best === 1 ? "win" : "wins"} in a row${r.streak > 1 ? ` (on ${r.streak} now)` : ""}</div></a>`;
+}
+
 export function renderStats(view, state, handlers) {
   const top = state.top || [];
   const st = streak(state.days, dayKey(Date.now()));
@@ -137,6 +157,7 @@ export function renderStats(view, state, handlers) {
     <p class="lede">${handlers.account?.user ? "Everything here is saved to your account." : "Everything here is saved in this browser only."} Score is wpm × accuracy², so accuracy counts for more than speed: 80 wpm at 100% beats 100 wpm at 89%. PP adds up your best galleys, and your rank comes from it.</p>
     <div class="sgrid">
       ${accountCard(handlers.account)}
+      <a class="scard wide edlink" href="#annual"><h2>The Retype Annual · ${new Date().getFullYear()}</h2><div class="big">Your year at the desk →</div><div class="sub">The year as a front page: how much you typed, your best day, your best galley, your races, your rank and the word that fought back hardest.</div></a>
       <a class="scard wide edlink" href="#edition"><h2>The Retype Weekly</h2><div class="big">Read this week's edition →</div><div class="sub">Your week at the desk as a front page: the numbers, your best, the word that gave you the most trouble and the headlines you made. A new one comes out every Monday.</div></a>
       ${levelCard(state.xp)}
       ${ppCard(top)}
@@ -146,6 +167,7 @@ export function renderStats(view, state, handlers) {
       <div class="scard"><h2>On the desk so far</h2>
         <div class="big">${state.totals.galleys}</div><div class="sub">${state.totals.galleys === 1 ? "galley" : "galleys"} finished</div>
         <div class="sub">${fmtDuration(state.totals.secs)} typing · ${state.totals.keys.toLocaleString()} keys · ${state.totals.perfect} perfect ${state.totals.perfect === 1 ? "galley" : "galleys"} (10+ words, no mistakes)</div></div>
+      ${raceCard(state.races)}
       ${topPlaysCard(top)}
       <div class="scard wide"><h2>Recent galleys</h2>${spark}
         ${recentRows ? `<div class="tblwrap"><table class="tbl"><thead><tr><th>When</th><th>Galley</th><th class="num">WPM</th><th class="num">Accuracy</th><th class="num">Score</th><th class="num">PP</th><th>Grade</th></tr></thead><tbody>${recentRows}</tbody></table></div>` : `<div class="sub">Nothing yet. Your first galley is waiting.</div>`}</div>
@@ -155,6 +177,7 @@ export function renderStats(view, state, handlers) {
         <div class="sactions"><button type="button" class="go" id="statsDaily">Type today's daily</button></div></div>
       <div class="scard wide"><h2>Personal bests</h2>
         ${bestRows ? `<div class="tblwrap"><table class="tbl"><thead><tr><th>Galley</th><th class="num">Score</th><th class="num">WPM</th><th class="num">Accuracy</th><th>Set</th></tr></thead><tbody>${bestRows}</tbody></table></div>` : `<div class="sub">Each kind of galley keeps its own best.</div>`}</div>
+      ${typeCase(state.typecase || {})}
       ${scrapbook(state.feats || {})}
       <div class="scard wide"><h2>Words that need work</h2>
         <div class="sub">Built up over every galley you've typed. A word drops off once you've typed it cleanly and at your normal pace a few times.</div>

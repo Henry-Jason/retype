@@ -8,6 +8,8 @@ import { applyResult } from "../storage/progress-service.js";
 import { legacyXp } from "./levels.js";
 import { mergeTop } from "./pp.js";
 import { mergeFeats } from "./feats.js";
+import { mergeCase } from "./typecase.js";
+import { emptyRaces, mergeRaces } from "./races.js";
 
 export const DOC_VERSION = 1;
 export const WEAK_CAP = 1500;
@@ -15,7 +17,7 @@ export const RECENT = 60;
 export const FOLDED_CAP = 300;
 
 export const emptyDoc = () => ({
-  v: DOC_VERSION, bests: {}, weak: {}, days: [], bestStreak: 0, xp: 0, top: [], feats: {},
+  v: DOC_VERSION, bests: {}, weak: {}, days: [], bestStreak: 0, xp: 0, top: [], feats: {}, typecase: {}, races: emptyRaces(),
   totals: { galleys: 0, secs: 0, keys: 0, perfect: 0 },
   folded: []
 });
@@ -31,6 +33,8 @@ export function docFrom(x) {
     xp: x.xp ?? legacyXp(x.totals),
     top: Array.isArray(x.top) ? x.top : [],
     feats: x.feats && typeof x.feats === "object" ? x.feats : {},
+    typecase: x.typecase && typeof x.typecase === "object" ? x.typecase : {},
+    races: mergeRaces(x.races, null),
     folded: Array.isArray(x.folded) ? x.folded : []
   };
 }
@@ -87,6 +91,8 @@ export function mergeGuest(doc, local, pending, today) {
     // the browser's top plays may include galleys from before PP (or before the account had them)
     top: mergeTop(d.top, local.top),
     feats: mergeFeats(d.feats, local.feats),
+    typecase: mergeCase(d.typecase, local.typecase),
+    races: mergeRaces(d.races, local.races),
     bestStreak: Math.max(d.bestStreak, local.bestStreak || 0)
   };
 }
@@ -112,3 +118,9 @@ export function cleanName(s) {
 }
 /** The default name for a new account: the first name from Google, or a placeholder. */
 export const defaultName = (user) => cleanName((user?.name || "").split(" ")[0]) || cleanName((user?.email || "").split("@")[0]) || "Typist";
+
+/** Folding this browser's race record (and any headlines it earned) into the account. */
+export function mergeExtras(doc, local) {
+  const d = docFrom(doc);
+  return { ...d, races: mergeRaces(d.races, local.races), feats: mergeFeats(d.feats, local.feats), typecase: mergeCase(d.typecase, local.typecase) };
+}

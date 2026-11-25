@@ -109,6 +109,11 @@ export async function createCloud(config, { emulators = false } = {}) {
       const s = await F.getDoc(F.doc(db, "boards", "pp", "entries", uid));
       return s.exists() ? s.data() : null;
     },
+    /** The entry just above this many PP: your rival. */
+    async ppAbove(pp) {
+      const snap = await F.getDocs(F.query(F.collection(db, "boards", "pp", "entries"), F.where("pp", ">", pp), F.orderBy("pp", "asc"), F.limit(1)));
+      return snap.empty ? null : snap.docs[0].data();
+    },
     async ppPlace(pp) {
       const entries = F.collection(db, "boards", "pp", "entries");
       const [above, all] = await Promise.all([

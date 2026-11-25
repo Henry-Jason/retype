@@ -3,21 +3,24 @@ import { updateBests, updateWeak, streak, dayKey } from "../core/progress.js";
 import { ppFor, playOf, addPlay, totalPp, rankFrom, topFrom } from "../core/pp.js";
 import { xpFor, levelFrom, legacyXp } from "../core/levels.js";
 import { checkFeats, addFeats } from "../core/feats.js";
+import { sortFor, addSort, rowsCompleted, rarity } from "../core/typecase.js";
+import { emptyRaces } from "../core/races.js";
 
 const uuid = () => (globalThis.crypto?.randomUUID ? crypto.randomUUID() : `g-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`);
 
 export const emptyState = () => ({
   profile: { id: uuid(), guest: true, created: Date.now() },
-  bests: {}, weak: {}, days: [], bestStreak: 0, xp: 0, top: [], feats: {},
+  bests: {}, weak: {}, days: [], bestStreak: 0, xp: 0, top: [], feats: {}, typecase: {}, races: emptyRaces(),
   totals: { galleys: 0, secs: 0, keys: 0, perfect: 0 },
   recent: []
 });
 
 export async function loadProgress(store) {
   const s = emptyState();
-  const [profile, bests, weak, days, bestStreak, totals, recent, xp, stored, feats] = await Promise.all([
+  const [profile, bests, weak, days, bestStreak, totals, recent, xp, stored, feats, typecase, races] = await Promise.all([
     store.get("profile"), store.get("bests"), store.get("weak"), store.get("days"),
-    store.get("bestStreak"), store.get("totals"), store.recent(60), store.get("xp"), store.get("top"), store.get("feats")
+    store.get("bestStreak"), store.get("totals"), store.recent(60), store.get("xp"), store.get("top"), store.get("feats"),
+    store.get("typecase"), store.get("races")
   ]);
   if (profile) s.profile = profile; else await store.set("profile", s.profile);
   // galleys typed before PP existed earn it once, here
@@ -27,7 +30,7 @@ export async function loadProgress(store) {
     ...s,
     bests: bests || {}, weak: weak || {}, days: days || [], bestStreak: bestStreak || 0,
     totals: totals || s.totals, recent: recent || [],
-    xp: xp ?? legacyXp(totals), top, feats: feats || {}
+    xp: xp ?? legacyXp(totals), top, feats: feats || {}, typecase: typecase || {}, races: races || emptyRaces()
   };
 }
 
@@ -72,12 +75,16 @@ export function applyResult(state, result, words, today = dayKey(result.at)) {
   const bestStreak = Math.max(state.bestStreak, st.count);
   // headlines: earned once, from this galley and where it leaves you
   const levelAfter = levelFrom(xpAfter);
+  // a perfect galley drops a piece of type (the same piece wherever it's worked out)
+  const sort = sortFor(result), typecase = addSort(state.typecase || {}, sort);
+  const completed = rowsCompleted(state.typecase || {}, typecase);
   const earned = checkFeats(state.feats || {}, result, {
+    sort, sortRare: sort && rarity(sort) === "rare", rowsCompleted: completed,
     totals, bestStreak, streak: st.count, level: levelAfter.level, rankIndex: rankAfter.rank ? rankAfter.index : -1,
     prevWeak: state.weak, weak, hour: new Date(result.at).getHours()
   });
   const feats = addFeats(state.feats || {}, earned, result.at);
-  const next = { ...state, recent, bests: best.bests, weak, days, totals, bestStreak, xp: xpAfter, top, feats };
+  const next = { ...state, recent, bests: best.bests, weak, days, totals, bestStreak, xp: xpAfter, top, feats, typecase };
   return {
     state: next,
     change: {
@@ -87,7 +94,8 @@ export function applyResult(state, result, words, today = dayKey(result.at)) {
       pp: p.ok ? p.pp : null, ppBefore: totalPp(topBefore), ppAfter: totalPp(top), inTop: top.some((x) => x.id === result.id),
       streak: st,
       xp: result.xp, xpParts, levelBefore: levelFrom(xpBefore), levelAfter,
-      feats: earned, featsBefore: state.feats || {}
+      feats: earned, featsBefore: state.feats || {},
+      sort, rowsCompleted: completed, typecaseBefore: state.typecase || {}
     }
   };
 }
@@ -99,7 +107,7 @@ export async function record(store, state, result, words) {
     await store.addResult(result);
     await Promise.all([
       store.set("bests", s.bests), store.set("weak", s.weak), store.set("days", s.days),
-      store.set("bestStreak", s.bestStreak), store.set("totals", s.totals), store.set("xp", s.xp), store.set("top", s.top), store.set("feats", s.feats)
+      store.set("bestStreak", s.bestStreak), store.set("totals", s.totals), store.set("xp", s.xp), store.set("top", s.top), store.set("feats", s.feats), store.set("typecase", s.typecase)
     ]);
   } catch (e) {
     console.warn("Couldn't save this galley", e);

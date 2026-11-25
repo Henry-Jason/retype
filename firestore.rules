@@ -23,7 +23,7 @@ service cloud.firestore {
 
     match /users/{uid} {
       function validAccount(d) {
-        return d.keys().hasOnly(['v', 'bests', 'weak', 'days', 'bestStreak', 'totals', 'folded', 'xp', 'top', 'feats', 'name', 'updated'])
+        return d.keys().hasOnly(['v', 'bests', 'weak', 'days', 'bestStreak', 'totals', 'folded', 'xp', 'top', 'feats', 'name', 'updated', 'typecase', 'races'])
           && d.v is int
           && d.bests is map
           && d.weak is map
@@ -34,7 +34,9 @@ service cloud.firestore {
           && (!('xp' in d) || (d.xp is number && d.xp >= 0))
           && (!('top' in d) || (d.top is list && d.top.size() <= 100))
           && (!('feats' in d) || (d.feats is map && d.feats.size() <= 200))
-          && (!('name' in d) || (d.name is string && d.name.size() <= 40));
+          && (!('name' in d) || (d.name is string && d.name.size() <= 40))
+          && (!('typecase' in d) || (d.typecase is map && d.typecase.size() <= 40))
+          && (!('races' in d) || (d.races is map && d.races.size() <= 10));
       }
 
       allow read: if isOwner(uid);

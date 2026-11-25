@@ -13,10 +13,10 @@
 // Local bookkeeping in the store's meta records:
 //   "account"  the uid this browser's data belongs to (absent for a guest)
 //   "pending"  ids of galleys finished here that the account hasn't counted yet
-import { mergeGuest, foldResult, mergeRecent, toCloud, fromCloud, docFrom, RECENT, defaultName } from "../core/sync.js";
+import { mergeGuest, foldResult, mergeRecent, toCloud, fromCloud, docFrom, mergeExtras, RECENT, defaultName } from "../core/sync.js";
 import { dayKey } from "../core/progress.js";
 
-const DOC_KEYS = ["bests", "weak", "days", "bestStreak", "totals", "xp", "top", "feats"];
+const DOC_KEYS = ["bests", "weak", "days", "bestStreak", "totals", "xp", "top", "feats", "typecase", "races"];
 
 async function saveDoc(store, doc) {
   await Promise.all(DOC_KEYS.map((k) => store.set(k, doc[k])));
@@ -103,4 +103,14 @@ export async function clearAccount({ store, cloud, uid }) {
   await store.clear();
   await store.set("account", uid);
   await store.set("pending", []);
+}
+
+/** Race results and the headlines they earn happen outside a galley: fold them into the account. */
+export async function pushExtras({ store, cloud, uid, state }) {
+  if (!uid || (await store.get("account")) !== uid) return null;
+  try {
+    const doc = docFrom(await cloud.foldAccount(uid, (cur) => mergeExtras(cur, state)));
+    await saveDoc(store, doc);
+    return withDoc(state, doc);
+  } catch (e) { console.warn("Couldn't sync the race record yet", e); return null; }
 }

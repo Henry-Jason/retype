@@ -54,6 +54,7 @@ export function createFakeCloud() {
       if (mine?.top?.length) rows.push({ uid: "test-uid", name: (d.profiles || {})["test-uid"]?.name || "Typist", pp: totalPp(mine.top), best: mine.top[0].pp, count: mine.top.length, plays: mine.top, backfilled: !!d.backfilled });
       return rows.sort((a, b) => b.pp - a.pp);
     },
+    async ppAbove(pp) { return (await this.ppBoard()).filter((r) => r.pp > pp).sort((a, b) => a.pp - b.pp)[0] || null; },
     async ppEntry(uid) { return (await this.ppBoard()).find((r) => r.uid === uid) || null; },
     async ppPlace(pp) { const b = await this.ppBoard(); return { place: b.filter((r) => r.pp > pp).length + 1, of: b.length }; },
     async backfillPp() { const d = load(); d.backfilled = (d.backfilled || 0) + 1; save(d); return { already: false }; },

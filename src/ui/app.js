@@ -14,7 +14,7 @@ import { syncAccount, pushGalley, forgetAccount, clearAccount, ensureProfile, en
 import { DEFAULTS, PRESETS, LIMITS, SLIDE, FS, FONTS, SETTINGS, saveSettings } from "./settings.js";
 import { playKey, playErr, playBell, playThunk } from "./sound.js";
 import { renderChart, drawChart } from "./chart.js";
-import { drawCard, downloadCard } from "./share.js";
+import { drawCard, downloadCard, drawRankCard } from "./share.js";
 import { renderStats, bestLabel } from "./stats.js";
 import { renderBoards, ordinal } from "./boards.js";
 import { levelFrom } from "../core/levels.js";
@@ -24,6 +24,12 @@ import { cleanName, fromCloud, defaultName } from "../core/sync.js";
 import { ROOM, QUICK, readCode, newCode, roomSettings, raceOpts, settingsLabel, nextHost, runReport, roundOver, standings, pickOpenRoom, lobbyEntry, ordinal as placeName } from "../core/room.js";
 import { renderRoom, standingsTable, lanesHtml } from "./race.js";
 import { GHOSTS, raceGhosts, withGhosts } from "../core/racers.js";
+import { ROWS as CASE_ROWS, rowsDone, rarity } from "../core/typecase.js";
+import { recordRace } from "../core/races.js";
+import { addFeats } from "../core/feats.js";
+import { pushExtras } from "../storage/account-sync.js";
+import { renderAnnual } from "./annual.js";
+import { annualYear, annualSeason } from "../core/annual.js";
 import { ghostTimeline, charsAt, place, leadSecs, fmtLead, wordStarts } from "../core/ghost.js";
 import { $, esc, pad, stampDate, uuid } from "./util.js";
 import { pickQuote, words as quoteWords, LENGTHS as QUOTE_LENGTHS, addQuotes } from "../core/quotes.js";
@@ -174,7 +180,22 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     try { localStorage.setItem("retype-edition-seen", lastWeekKey()); } catch { /* fine */ }
     if (editionNew) { editionNew = false; renderNavs(); }
   }
-  const deskHave = () => ({ level: levelFrom(state.xp).level, feats: state.feats || {} });
+  // The Annual: news in December and January (a badge on Stats until it's read), there all year
+  let annualNew = false;
+  try { annualNew = annualSeason() && localStorage.getItem("retype-annual-seen") !== String(annualYear()); } catch { /* fine */ }
+  async function showAnnual(year) {
+    const results = await store.all();
+    renderAnnual(statsView, {
+      results, year, races: state.races, feats: state.feats || {}, rank: rankFrom(state.top || []),
+      name: boardName || (user?.name || "").split(" ")[0] || "Local typist",
+      onBack: () => { location.hash = ""; },
+      onYear: (y) => showAnnual(y),
+      onPractise: (w) => { location.hash = ""; newTest({ kind: "practice", words: shuffleSpread([w, w, w, w, w, w, w, w], mulberry32(randomSeed())), label: `Practice · word of the year: ${w}` }); }
+    });
+    if (year === annualYear() && annualNew) { annualNew = false; try { localStorage.setItem("retype-annual-seen", String(year)); } catch { /* fine */ } renderNavs(); }
+  }
+  const deskHave = () => ({ level: levelFrom(state.xp).level, feats: state.feats || {}, rows: rowsDone(state.typecase || {}) });
+  const rowLabel = (id) => CASE_ROWS.find((r) => r.id === id)?.label || id;
   matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => applyDisplay());
   function updateStanding() {
     applyDisplay();
@@ -207,7 +228,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
   const ICON_PODIUM = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21V8h6v13M3 21v-8h6M15 21v-5h6v5M2 21h20M12 2.5l.9 1.8 2 .3-1.45 1.4.35 2-1.8-.95-1.8.95.35-2L9.1 4.6l2-.3z"/></svg>`;
   const ICON_CHART = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>`;
   // The bar above the paper: what to type (one switch), then only that kind's options.
-  let todayOpen = false;
+  let todayOpen = false, welcomeOff = null, closeCeremony = null;
   function currentTab() {
     if (!test || test.race) return null;
     const k = test.source.kind;
@@ -336,7 +357,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     nav("navbtn" + (location.hash.startsWith("#room") ? " on" : ""), `${ICON_FLAG}Race${room ? ` <i class="badge" title="You're in room ${room.code}">${room.code}</i>` : ""}`, () => { location.hash = room ? "room=" + room.code : "room"; }, "openRoom", "Race friends in a private room");
     nav("navbtn" + (location.hash === "#quotes" ? " on" : ""), `${ICON_QUOTE}Quotes${queueCount ? ` <i class="badge" title="${queueCount} to review">${queueCount}</i>` : ""}`, () => { location.hash = "quotes"; }, "openQuotes");
     nav("navbtn" + (location.hash === "#boards" ? " on" : ""), `${ICON_PODIUM}Boards`, () => { location.hash = "boards"; }, "openBoards");
-    nav("navbtn" + (location.hash === "#stats" ? " on" : ""), `${ICON_CHART}Stats${editionNew ? ` <i class="badge" title="A new weekly edition is out">new</i>` : ""}`, () => { location.hash = editionNew ? "edition" : "stats"; }, "openStats");
+    nav("navbtn" + (location.hash === "#stats" ? " on" : ""), `${ICON_CHART}Stats${annualNew ? ` <i class="badge" title="Your year in galleys is out">annual</i>` : editionNew ? ` <i class="badge" title="A new weekly edition is out">new</i>` : ""}`, () => { location.hash = annualNew ? "annual" : editionNew ? "edition" : "stats"; }, "openStats");
     nav("navbtn icon", ICON_GEAR, openSettings, "openSettings", "Settings");
     $("#openSettings").setAttribute("aria-label", "Settings");
     if (accountsEnabled) {
@@ -385,11 +406,39 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
         if (e && (e.plays || []).some((p) => p.id === result.id)) {
           const p = await cloud.ppPlace(e.pp);
           note.textContent = `PP board: ${ordinal(p.place)} of ${p.of}, with ${Math.round(e.pp).toLocaleString("en-IE")} PP.`;
+          checkRival(e);
           return;
         }
       } catch { /* try again */ }
     }
     note.textContent = "The PP board hasn't caught up with this galley yet; it'll be there shortly.";
+  }
+
+  /* ---------- rivals ---------- */
+  // Someone just above you on the PP board. Pass them and it's news; then there's a new one.
+  const RIVAL_KEY = "retype-rival";
+  const loadRival = () => { try { return JSON.parse(localStorage.getItem(RIVAL_KEY)); } catch { return null; } };
+  const saveRival = (r) => { try { r ? localStorage.setItem(RIVAL_KEY, JSON.stringify(r)) : localStorage.removeItem(RIVAL_KEY); } catch { /* fine */ } };
+  async function checkRival(me) {
+    if (!cloud?.ppAbove || !user || !me) return;
+    try {
+      let rv = loadRival();
+      if (rv && rv.uid === user.uid) rv = null;
+      if (rv) { const cur = await cloud.ppEntry(rv.uid); rv = cur ? { ...rv, pp: cur.pp, name: cur.name || rv.name } : null; }
+      const band = doneBand.querySelector(".doneIn > div");
+      if (rv && me.pp > rv.pp) {
+        const clip = `<div class="clip"><small>Extra! Extra!</small><b>${esc(myName())} overtakes ${esc(rv.name)} on the PP board</b><span>Your rival is behind you now.</span></div>`;
+        const clips = band?.querySelector(".clips");
+        if (clips) clips.insertAdjacentHTML("afterbegin", clip); else band?.insertAdjacentHTML("beforeend", `<div class="clips">${clip}</div>`);
+        toast(`You passed your rival, ${rv.name}!`, "lv"); playBell(cfg.bell);
+        state = { ...state, feats: addFeats(state.feats, state.feats.rival ? [] : [{ id: "rival", d: rv.name }], Date.now()) };
+        store.set("feats", state.feats);
+        rv = null;
+      }
+      if (!rv) { const up = await cloud.ppAbove(me.pp); rv = up && up.uid !== user.uid ? { uid: up.uid, name: up.name, pp: up.pp } : null; }
+      saveRival(rv);
+      if (rv && band && !band.querySelector(".rivalline")) band.insertAdjacentHTML("beforeend", `<div class="note rivalline">Your rival: <b>${esc(rv.name)}</b>, ${Math.max(0.1, rv.pp - me.pp).toFixed(1)} PP ahead. <a href="#boards">The board →</a></div>`);
+    } catch (e) { console.warn("Couldn't check on your rival", e); }
   }
 
   /* ---------- accounts ---------- */
@@ -477,7 +526,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       UNLOCKS[kind].map((it) => {
         const open = isUnlocked(it, have), on = chosen(kind, cfg[kind], have).id === it.id;
         const sw = it.color ? `<i class="sw" style="background:${it.color}"></i>` : "";
-        return `<button type="button" data-desk="${kind}" data-id="${it.id}" aria-pressed="${on}" ${open ? "" : `disabled title="${esc(needs(it, (id) => featById(id)?.hint || id))}"`}>${sw}${esc(it.label)}${open ? "" : `<small>${it.level != null ? `Level ${it.level}` : "Headline"}</small>`}</button>`;
+        return `<button type="button" data-desk="${kind}" data-id="${it.id}" aria-pressed="${on}" ${open ? "" : `disabled title="${esc(needs(it, (id) => featById(id)?.hint || id, rowLabel))}"`}>${sw}${esc(it.label)}${open ? "" : `<small>${it.level != null ? `Level ${it.level}` : it.row != null ? "Type case" : "Headline"}</small>`}</button>`;
       }).join("") + `</div></div>`;
     const desk = `<div class="dsec">Desk</div>` + deskGroup("pencil", "Pencil", "The caret and the proof marks. More colours come with levels and headlines.") +
       deskGroup("paper", "Till roll", "The paper your receipts print on.") + deskGroup("ink", "Stamp ink", "The finish stamp.");
@@ -508,7 +557,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
   /* ---------- lifecycle ---------- */
   function focusInput() { if (!drawerOpen && test && !test.ended && statsView.hidden) input.focus(); }
   function newTest(source) {
-    clearInterval(ticker); clearTimeout(idleTimer); stopGhost(); stopRace();
+    clearInterval(ticker); clearTimeout(idleTimer); stopGhost(); stopRace(); closeCeremony?.();
     document.body.classList.remove("ended", "typing-now", "quiet");
     doneBand.hidden = true;
     const code = source.kind === "code", practice = source.kind === "practice", quoteMode = source.kind === "quote" || (source.kind === "room" && source.opts?.mode === "quote");
@@ -960,7 +1009,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
   }
   async function startRound({ ghosts: withG = false } = {}) {
     const d = room?.data;
-    if (!d || d.host !== myUid() || d.state === "race" || room.starting) return;
+    if (!d || d.host !== myUid() || room.starting || (d.state === "race" && !roundOver(roomView(d), room.api.serverNow()))) return;
     const entrants = Object.fromEntries(Object.entries(d.players || {}).filter(([, p]) => p.online).map(([uid]) => [uid, true]));
     // a quote race: this browser picks one everyone can have (the library or approved shared ones, never your private quotes)
     let quote = null;
@@ -1086,6 +1135,13 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     const total = test.infinite ? 0 : test.starts[test.targets.length] - 1;
     lanes.innerHTML = `<div class="wrap"><div class="lanehead">Race ${round} · room ${esc(test.race.code)} · ${esc(settingsLabel(d.settings))}</div>${lanesHtml(rows, d.settings, total)}</div>`;
   }
+  // The top three on a front page, winner in the middle
+  function podiumHtml(rows, settings) {
+    const [a, b, c] = rows, surv = settings.mode === "survival";
+    const what = (r) => (surv ? `${r.w} words` : `${(r.score ?? 0).toFixed(1)}`);
+    const step = (r, n, cls) => r ? `<div class="pstep ${cls}${r.me ? " me" : ""}"><div class="pname">${esc(r.name)}</div><div class="pwhat">${what(r)}</div><div class="pblock">${n}</div></div>` : "";
+    return `<div class="podium"><div class="pmast">The race page · ${esc(a.name)} takes it</div><div class="psteps">${step(b, 2, "p2")}${step(a, 1, "p1")}${step(c, 3, "p3")}</div></div>`;
+  }
   // After you finish: the standings as they come in, and where you placed once everyone's done.
   function drawRaceResults() {
     const d = roomView(room?.data); if (!d || !test.race) return;
@@ -1099,6 +1155,19 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     if (!over) { badge.textContent = `Waiting for ${waiting} more…`; return; }
     badge.textContent = mine?.done ? `${placeName(mine.place)} of ${rows.length}` : "Didn't finish";
     badge.className = mine?.done && mine.place === 1 && rows.length > 1 ? "pb" : "rankup";
+    // once per race: the podium, the record and any race headlines
+    const key = `${test.race.code}:${test.race.round}`;
+    if (box && rows.length >= 3 && !box.querySelector(".podium")) box.insertAdjacentHTML("afterbegin", podiumHtml(rows, d.settings));
+    if (mine?.done && test.race.settled !== key) {
+      test.race.settled = key;
+      const fastest = Math.max(...rows.map((x) => x.wpm || 0));
+      const out = recordRace(state.races, { place: mine.place, of: rows.length, upset: mine.place === 1 && mine.wpm < fastest }, new Date().getFullYear(), state.feats || {});
+      state = { ...state, races: out.races, feats: addFeats(state.feats || {}, out.earned, Date.now()) };
+      store.set("races", state.races); if (out.earned.length) store.set("feats", state.feats);
+      for (const e of out.earned) toast(`EXTRA! ${headline(e.id, e)}`, "lv");
+      if (mine.place === 1 && rows.length > 1) { playBell(cfg.bell); doneBand.classList.remove("slam"); void doneBand.offsetWidth; doneBand.classList.add("slam"); }
+      if (user && cloud) pushExtras({ store, cloud, uid: user.uid, state }).then((next) => { if (next) state = { ...next, recent: state.recent }; });
+    }
   }
 
   /* ---------- ghost races ---------- */
@@ -1487,6 +1556,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       }
     });
     test.lastResult = result;
+    if (welcomeOff && test.committed) { welcomeOff(); welcomeOff = null; }
     const thisGalley = galleyNo();
     const earlierDailies = state.recent.filter((x) => x.kind === "daily");
     let change = null;
@@ -1503,8 +1573,8 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
           else if (uid) { sync = "error"; syncError = "offline? it will retry"; }
           updateStanding();
           // the finish band is drawn by now; only add to it if it's still this galley's
-          if (next && (result.kind === "daily" || result.kind === "dsurv") && test === finished) showBoardPlace(result, doneBand.querySelector(".doneIn > div"));
-          if (next && change?.inTop && test === finished) showPpPlace(result, doneBand.querySelector(".doneIn > div"));
+          if (next && (result.kind === "daily" || result.kind === "dsurv") && test === finished) showBoardPlace(result, moreBox());
+          if (next && change?.inTop && test === finished) showPpPlace(result, moreBox());
         });
       }
     }
@@ -1539,10 +1609,9 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     const levelUp = change && change.levelAfter.level > change.levelBefore.level;
     if (change?.xp) badges += `<span class="xp" title="${esc((change.xpParts || []).map(([l, x]) => `${l} ${x}`).join(" · "))}">+${change.xp} XP</span>`;
     if (levelUp) badges += `<span class="pb">Level ${change.levelAfter.level}</span>`;
-    let note = "";
-    if (change?.xpParts?.length > 1) note += `<div class="note">${esc(change.xpParts.map(([l, x]) => `${l} +${x}`).join(" · "))}</div>`;
+    let note = "", more = ""; // note: what matters now; more: tucked under Details
+    if (change?.xpParts?.length > 1) more += `<div class="note">${esc(change.xpParts.map(([l, x]) => `${l} +${x}`).join(" · "))}</div>`;
     if (change?.isBest) toast(`New personal best · ${bestLabel(change.key)}: ${change.previous ? `${bestWas(change.previous)} → ` : ""}${test.survival ? `${n} words` : score(r.wpm, r.acc).toFixed(1)}`, "pb");
-    if (change?.rankUp) toast(`Promoted to ${change.rankAfter.rank.name} · ${Math.round(change.ppAfter)} PP`, "lv");
     if (levelUp) toast(`Level ${change.levelAfter.level}! ${change.levelAfter.need - change.levelAfter.into} XP to the next.`, "lv");
     // headlines earned, as clippings; and anything they (or a level) unlock for the desk
     let clips = "";
@@ -1555,11 +1624,16 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       if (change.feats.length > 3) clips += `<a class="clip more" href="#stats"><small>And</small><b>${change.feats.length - 3} more ${change.feats.length - 3 === 1 ? "story" : "stories"}</b><span>In your scrapbook, on the Stats page.</span></a>`;
       if (change.feats.length <= 2) change.feats.forEach((e) => toast(`EXTRA! ${headline(e.id, e)}`, "lv"));
       else toast(`EXTRA! ${change.feats.length} headlines from one galley.`, "lv");
-      const unlocked = newlyUnlocked({ level: change.levelBefore.level, feats: change.featsBefore }, { level: change.levelAfter.level, feats: state.feats });
-      if (unlocked.length) { toast(`Unlocked for your desk: ${unlocked.map((u) => u.label).join(", ")}. Settings → Desk.`, "pb"); }
-    } else if (levelUp) {
-      const unlocked = newlyUnlocked({ level: change.levelBefore.level, feats: state.feats }, { level: change.levelAfter.level, feats: state.feats });
+    }
+    if (change) {
+      const unlocked = newlyUnlocked({ level: change.levelBefore.level, feats: change.featsBefore, rows: rowsDone(change.typecaseBefore || {}) }, { level: change.levelAfter.level, feats: state.feats, rows: rowsDone(state.typecase || {}) });
       if (unlocked.length) toast(`Unlocked for your desk: ${unlocked.map((u) => u.label).join(", ")}. Settings → Desk.`, "pb");
+    }
+    // a piece of type for the case
+    if (change?.sort) {
+      const rare = rarity(change.sort) === "rare";
+      clips = `<a class="clip sortclip${rare ? " rare" : ""}" href="#stats"><small>${rare ? "Rare sort!" : "For the type case"}</small><b class="sortpiece">${esc(change.sort)}</b><span>${rare ? "One of the rare ones. " : ""}A perfect galley drops a piece of type. Collect a row to unlock something.</span></a>` + clips;
+      if (rare) toast(`A rare piece of type: '${change.sort}'. Into the case it goes.`, "lv");
     }
     const from = test.source.from;
     if (test.raceOut) {
@@ -1569,7 +1643,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
         : !Number.isFinite(o.lead) ? `Left ${name} behind`
         : Math.abs(o.lead) < 0.05 ? `Dead level with ${name}` : o.lead > 0 ? `Beat ${name} by ${o.lead.toFixed(1)}s` : `${Name} won by ${(-o.lead).toFixed(1)}s`;
       badges += `<span class="${(o.words ?? o.lead) > 0 ? "pb" : "rankup"}">${head}</span>`;
-      if (o.words == null) note += `<div class="note">${test.racer.same ? "The ghost is that run, keystroke for keystroke." : "The ghost runs at your best's pace in characters, on these words."} It races to the line; bests still go by score.</div>`;
+      if (o.words == null) more += `<div class="note">${test.racer.same ? "The ghost is that run, keystroke for keystroke." : "The ghost runs at your best's pace in characters, on these words."} It races to the line; bests still go by score.</div>`;
     }
     if (from && test.committed) {
       const c = compare({ wpm: r.wpm, acc: test.died ? r.acc : r.acc }, from, score), who = from.name || "them";
@@ -1584,26 +1658,33 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       const past = earlierDailies.filter((x) => x.day !== test.source.day);
       const firsts = new Map(); for (const x of past) firsts.set(x.day, x); // recent is newest first, so the last one kept per day is that day's first
       const best = Math.max(0, ...[...firsts.values()].map((x) => x.score));
-      note += `<div class="note">${firstToday ? `A retry: today's daily stays at your first attempt, ${official.score.toFixed(1)}.` : "Your first attempt today, so this is the one that counts."}${firsts.size ? ` Your best daily is ${best.toFixed(1)} over ${firsts.size} ${firsts.size === 1 ? "day" : "days"}.` : ""}</div>`;
+      more += `<div class="note">${firstToday ? `A retry: today's daily stays at your first attempt, ${official.score.toFixed(1)}.` : "Your first attempt today, so this is the one that counts."}${firsts.size ? ` Your best daily is ${best.toFixed(1)} over ${firsts.size} ${firsts.size === 1 ? "day" : "days"}.` : ""}</div>`;
       if (!firstToday && firsts.size && official.score > best) badges += `<span class="pb">Best daily yet</span>`;
     }
     if (change?.pp != null) {
       const gain = change.ppAfter - change.ppBefore;
-      note += `<div class="note">${change.inTop ? `Total ${fmtPp(change.ppAfter)} PP (+${gain.toFixed(1)}).` : `Total ${fmtPp(change.ppAfter)} PP. This one didn't make your top 100.`}</div>`;
-    } else if (change && test.source.kind === "normal" && !change.rankAfter.rank && !test.code && !test.survival) note += `<div class="note">Galleys of 15 words or more earn PP, and PP earns a rank.</div>`;
+      more += `<div class="note">${change.inTop ? `Total ${fmtPp(change.ppAfter)} PP (+${gain.toFixed(1)}).` : `Total ${fmtPp(change.ppAfter)} PP. This one didn't make your top 100.`}</div>`;
+    } else if (change && test.source.kind === "normal" && !change.rankAfter.rank && !test.code && !test.survival) more += `<div class="note">Galleys of 15 words or more earn PP, and PP earns a rank.</div>`;
     // so close: within 5% (or 2 points) of a best you didn't beat
     if (change && !change.isBest && change.previous && !test.survival && change.previous.words == null) {
       const gap = change.previous.score - score(r.wpm, r.acc);
       if (gap > 0 && gap <= Math.max(2, change.previous.score * 0.05)) note += `<div class="note close">Just ${gap.toFixed(1)} short of your best (${change.previous.score.toFixed(1)}).</div>`;
     }
-    if (!test.committed) note = `<div class="note">Nothing finished, so this one wasn't saved.</div>`;
+    // the idea that matters most here, said once, the first time speed cost you
+    if (test.committed >= 10 && !test.survival && !test.code && r.acc < 95 && r.wpm > 0 && !seen("accHint")) {
+      markSeen("accHint");
+      note += `<div class="note hint">Speed isn't everything here: score is wpm × accuracy². At 100% this galley would have scored ${Math.round(r.wpm)}; at ${r.acc.toFixed(1)}% it scored ${score(r.wpm, r.acc).toFixed(1)}. Slow down a touch and it goes up.</div>`;
+    }
+    if (!test.committed) note = `<div class="note">Nothing finished, so this one wasn't saved.</div>`, more = "";
     if (test.race) badges += `<span class="rankup" id="racePlace">Waiting for the others…</span>`;
     const seal = clean && n >= 10 && !test.survival ? "Perfect" : test.survival && change?.isBest && n >= 10 ? "New best" : "";
+    const flourish = seal === "Perfect" ? flourishFor(test.lastResult?.id || String(no)) : "";
     doneBand.innerHTML = `<div class="wrap doneIn">
       <div><div class="eyebrow">Galley ${no} · finished</div>
         <div class="dtitle">${esc(what)} in ${r.secs.toFixed(1)}s</div>
-        <div class="dsub">${esc(sub)}</div>${badges ? `<div>${badges}</div>` : ""}${note}${clips ? `<div class="clips">${clips}</div>` : ""}</div>
-      <div class="stamps">${seal ? `<div class="seal" aria-hidden="true"><span>${seal}</span></div>` : ""}<div class="stamp${stamp.cls}" role="img" aria-label="${esc(stamp.aria)}"><b>${stamp.big}</b><span>${stamp.small}</span></div></div>
+        <div class="dsub">${esc(sub)}</div>${badges ? `<div>${badges}</div>` : ""}${note}${clips ? `<div class="clips">${clips}</div>` : ""}
+        <details class="more" id="doneMore"${more ? "" : " hidden"}><summary>Details</summary><div class="morebody">${more}</div></details></div>
+      <div class="stamps">${flourish}${seal ? `<div class="seal" aria-hidden="true"><span>${seal}</span></div>` : ""}<div class="stamp${stamp.cls}" role="img" aria-label="${esc(stamp.aria)}"><b>${stamp.big}</b><span>${stamp.small}</span></div></div>
     </div>`;
     doneBand.hidden = false;
     doneBand.classList.remove("slam"); void doneBand.offsetWidth; doneBand.classList.add("slam");
@@ -1612,6 +1693,45 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       doneBand.querySelector(".doneIn > div").insertAdjacentHTML("beforeend", `<div class="note">Sign in to put your daily on the board.</div>`);
     }
     window.scrollTo(0, 0);
+    if (change?.rankUp) { const t = test; setTimeout(() => { if (test === t && statsView.hidden) ceremony(change); }, 900); }
+  }
+  // The Details box under the finish band, for notes that arrive later (boards, PP)
+  function moreBox() { const d = $("#doneMore"); if (!d) return null; d.hidden = false; return d.querySelector(".morebody"); }
+  const seen = (k) => { try { return !!localStorage.getItem("retype-seen-" + k); } catch { return true; } };
+  const markSeen = (k) => { try { localStorage.setItem("retype-seen-" + k, "1"); } catch { /* fine */ } };
+  // A small mark of approval on a perfect galley, a different one each time (chosen by the galley)
+  function flourishFor(id) {
+    let h = 0; for (const c of String(id)) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+    const marks = [
+      `<div class="flourish ring" aria-hidden="true"></div>`,
+      `<div class="flourish okprint" aria-hidden="true">OK to print</div>`,
+      `<div class="flourish fist" aria-hidden="true">☞</div>`,
+      `<div class="flourish reg" aria-hidden="true"><svg viewBox="0 0 40 40" width="40" height="40"><circle cx="20" cy="20" r="11" fill="none" stroke="currentColor" stroke-width="2"/><path d="M20 2v36M2 20h36" stroke="currentColor" stroke-width="2"/></svg></div>`,
+      `<div class="flourish stet" aria-hidden="true">stet</div>`,
+      `<div class="flourish aster" aria-hidden="true">⁂</div>`
+    ];
+    return marks[h % marks.length];
+  }
+  // Promoted: a moment of its own, with a front page to keep
+  function ceremony(change) {
+    const rk = change.rankAfter.rank, next = change.rankAfter.next;
+    const quips = ["The corner office is looking smaller already.", "The newsroom stands. Some of it, anyway.", "Your name, in slightly bigger type.", "Celebrations are planned, then cancelled for deadlines.", "Pencils are sharpened in your honour."];
+    const el = document.createElement("div"); el.className = "ceremony"; el.setAttribute("role", "dialog"); el.setAttribute("aria-label", `Promoted to ${rk.name}`);
+    el.innerHTML = `<div class="cpage"><div class="cmast">The Retype · Extra</div><div class="crule"></div>
+      <div class="ckicker">Promotion</div><h2>${esc(boardName || (user?.name || "").split(" ")[0] || "Local typist")} named ${esc(rk.name)}</h2>
+      <p>${esc(quips[Math.floor(change.ppAfter) % quips.length])}</p>
+      <div class="cfacts"><span><b>${Math.round(change.ppAfter).toLocaleString("en-IE")}</b> PP</span>${next ? `<span>Next: <b>${esc(next.name)}</b> at ${next.min.toLocaleString("en-IE")} PP</span>` : `<span>The top of the masthead.</span>`}</div>
+      <div class="sactions"><button type="button" class="go" id="cerShare">Save the front page</button><button type="button" class="go primary" id="cerOk">Carry on <kbd>enter</kbd></button></div></div>`;
+    document.body.appendChild(el);
+    playBell(cfg.bell);
+    const close = () => { el.remove(); removeEventListener("keydown", onKey, true); removeEventListener("hashchange", close); closeCeremony = null; };
+    closeCeremony?.(); closeCeremony = close;
+    addEventListener("hashchange", close); // going anywhere else puts it away
+    const onKey = (e) => { if (e.key === "Escape" || e.key === "Enter") { e.preventDefault(); e.stopPropagation(); close(); } };
+    addEventListener("keydown", onKey, true);
+    el.querySelector("#cerOk").onclick = close;
+    el.querySelector("#cerShare").onclick = () => downloadCard(drawRankCard({ name: boardName || "Local typist", rank: rk.name, pp: change.ppAfter, next, date: stampDate() }), `retype-${rk.name.toLowerCase().replace(/\W+/g, "-")}.png`);
+    el.querySelector("#cerOk").focus();
   }
   function finishReceipt(r) {
     receipt.insertAdjacentHTML("beforeend", `<div class="dash"></div>
@@ -1668,7 +1788,8 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       <div class="qpanelacts">${heartBtn(q, "favRes")}</div>
       ${canReport ? `<div class="qreport" id="qrep"><button type="button" class="linkbtn" id="qrepOpen">Report this quote</button></div>` : ""}</div>` : "";
     const keepable = q && q.shared && !myQuotes.some((x) => x.text.toLowerCase() === q.text.toLowerCase());
-    const raceCards = test.race ? `<div class="card"><h3>Back to the room</h3><p>See the standings${room && room.data?.host === myUid() ? " and start the next race" : ", and wait for the next race"}.</p><button class="go primary" id="btnRoom">Room ${esc(test.race.code)} <kbd>tab</kbd></button></div>` : "";
+    const host = room && room.data?.host === myUid();
+    const raceCards = test.race ? `<div class="card"><h3>${host ? "Rematch" : "Back to the room"}</h3><p>${host ? "Same room, same players, new words, as soon as everyone's done." : "See the standings, and you're in the next race when the host starts it."}</p>${host ? `<button class="go primary" id="btnRematch">Rematch</button>` : ""}<button class="go${host ? "" : " primary"}" id="btnRoom">Room ${esc(test.race.code)} <kbd>tab</kbd></button></div>` : "";
     const nextCard = test.race ? raceCards : q
       ? `<div class="card"><h3>Next quote</h3><p>Another ${cfg.quoteLen === "any" ? "" : cfg.quoteLen + " "}quote at random.</p><button class="go" id="btnNext">Start <kbd>tab</kbd></button></div>
          <div class="card"><h3>Type it again</h3><p>The same quote, now you know where it bites.</p><button class="go" id="btnAgain">Start <kbd>esc</kbd></button></div>
@@ -1704,6 +1825,11 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     $("#btnDrill").onclick = () => { if (drill) newTest({ kind: "practice", words: drill.words, label: `Pair drill · ${drill.pairs.join(" ")}` }); };
     $("#btnNext")?.addEventListener("click", nextFromResults);
     $("#btnRoom")?.addEventListener("click", nextFromResults);
+    $("#btnRematch")?.addEventListener("click", (e) => {
+      const d = room?.data;
+      if (d && d.state === "race" && !roundOver(roomView(d), room.api.serverNow())) { e.currentTarget.textContent = "Waiting for the others…"; return; }
+      startRound({ ghosts: !!d?.ghosts });
+    });
     $("#btnAgain")?.addEventListener("click", restart);
     if (test.race) drawRaceResults();
     if (q) {
@@ -1840,10 +1966,10 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       if (c) { newTest(challengeSource(c)); }
       else { notice = "That challenge link didn't work, so here's an ordinary galley."; newTest({ kind: "normal" }); }
     }
-    const page = location.hash === "#stats" ? "stats" : location.hash === "#boards" ? "boards" : location.hash === "#quotes" ? "quotes" : location.hash === "#edition" ? "edition" : location.hash.startsWith("#room") ? "room" : null;
+    const page = location.hash === "#stats" ? "stats" : location.hash === "#boards" ? "boards" : location.hash === "#quotes" ? "quotes" : location.hash === "#edition" ? "edition" : location.hash === "#annual" ? "annual" : location.hash.startsWith("#room") ? "room" : null;
     // both pages draw into the same view; the typing view hides behind either
     statsView.hidden = !page; typingView.hidden = !!page;
-    for (const id of ["openStats", "openBoards", "openQuotes", "openRoom"]) $("#" + id)?.classList.toggle("on", page === id.slice(4).toLowerCase() || (id === "openStats" && page === "edition"));
+    for (const id of ["openStats", "openBoards", "openQuotes", "openRoom"]) $("#" + id)?.classList.toggle("on", page === id.slice(4).toLowerCase() || (id === "openStats" && (page === "edition" || page === "annual")));
     const back = () => { location.hash = ""; };
     const boardHandlers = {
       signedIn: !!user,
@@ -1858,7 +1984,10 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
         return { ...p, entry };
       } : null
     };
-    if (page === "room") {
+    if (page === "annual") {
+      input.blur();
+      showAnnual(annualYear()).then(() => window.scrollTo(0, 0));
+    } else if (page === "room") {
       input.blur();
       const want = readCode(location.hash.slice(6));
       if (want && want !== room?.code && user && !roomBusy) joinRoom(want);
@@ -1923,6 +2052,17 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
 
   applyDisplay();
   newTest({ kind: "normal" });
+  // a first visit: the one idea that matters, before the first galley
+  if (!state.totals.galleys && !seen("welcome")) {
+    $("#during")?.insertAdjacentHTML("afterbegin", `<div class="welcome" id="welcome"><h2>Welcome to Retype</h2>
+      <ul><li><b>Accuracy counts double.</b> Your score is wpm × accuracy², so 80 wpm at 100% beats 100 wpm at 89%.</li>
+      <li><b>Mistakes are marked like a proof</b>, and the words you fumble come back in practice until they don't.</li>
+      <li><b>Perfect galleys drop pieces of type</b> for your collection, and <a href="#room">Race</a> puts you up against other typists.</li></ul>
+      <button type="button" class="go" id="welcomeOk">Got it</button> <span class="sub">Just start typing: the text below is your first galley.</span></div>`);
+    const done = () => { markSeen("welcome"); $("#welcome")?.remove(); };
+    $("#welcomeOk")?.addEventListener("click", () => { done(); focusInput(); });
+    welcomeOff = done;
+  }
   route();
   checkEdition().catch(() => {});
 }

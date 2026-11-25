@@ -83,3 +83,27 @@ export function downloadCard(canvas, name) {
     setTimeout(() => URL.revokeObjectURL(a.href), 4000);
   }, "image/png");
 }
+
+/** A promotion, as a front page: name, new rank, PP and what's next. Light paper, like the result card. */
+export function drawRankCard({ name, rank, pp, next, date }) {
+  const W = 640, H = 640, s = 2;
+  const cv = document.createElement("canvas"); cv.width = W * s; cv.height = H * s;
+  const g = cv.getContext("2d"); g.scale(s, s);
+  g.fillStyle = "#dfe3e8"; g.fillRect(0, 0, W, H);
+  g.fillStyle = C.paper; g.shadowColor = "rgba(0,0,0,.18)"; g.shadowBlur = 24; g.shadowOffsetY = 10; g.fillRect(50, 40, W - 100, H - 90); g.shadowColor = "transparent";
+  const serif = (size, w = 700) => `${w} ${size}px Georgia, "Times New Roman", serif`;
+  g.textAlign = "center"; g.fillStyle = C.ink;
+  g.font = serif(44); g.fillText("The Retype", W / 2, 110);
+  g.fillRect(80, 128, W - 160, 2); g.fillRect(80, 134, W - 160, 1);
+  g.font = `400 13px "Overpass Mono", "Courier Prime", monospace`; g.fillStyle = C.muted; g.fillText(`EXTRA · ${date}`, W / 2, 156);
+  g.fillStyle = C.pencil; g.font = `700 14px "Overpass Mono", monospace`; g.fillText("PROMOTION", W / 2, 214);
+  g.fillStyle = C.ink; g.font = serif(40);
+  const words = `${name} named ${rank}`.split(" "); let line = "", y = 266;
+  for (const w of words) { const t = line ? line + " " + w : w; if (g.measureText(t).width > W - 180 && line) { g.fillText(line, W / 2, y); y += 48; line = w; } else line = t; }
+  g.fillText(line, W / 2, y);
+  y += 70; g.font = `700 54px "Courier Prime", monospace`; g.fillText(`${Math.round(pp).toLocaleString("en-IE")} PP`, W / 2, y);
+  y += 44; g.font = serif(18, 400); g.fillStyle = C.muted;
+  g.fillText(next ? `Next: ${next.name}, at ${next.min.toLocaleString("en-IE")} PP` : "The top of the masthead.", W / 2, y);
+  g.font = `400 13px "Overpass Mono", monospace`; g.fillText("retype.web.app", W / 2, H - 76);
+  return cv;
+}
