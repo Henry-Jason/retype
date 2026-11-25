@@ -206,6 +206,18 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
   const ICON_FLAG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></svg>`;
   const ICON_PODIUM = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21V8h6v13M3 21v-8h6M15 21v-5h6v5M2 21h20M12 2.5l.9 1.8 2 .3-1.45 1.4.35 2-1.8-.95-1.8.95.35-2L9.1 4.6l2-.3z"/></svg>`;
   const ICON_CHART = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>`;
+  // The bar above the paper: what to type (one switch), then only that kind's options.
+  let todayOpen = false;
+  function currentTab() {
+    if (!test || test.race) return null;
+    const k = test.source.kind;
+    if (test.code) return "code";
+    if (k === "quote") return "quote";
+    if (k === "daily" || k === "dsurv") return "today";
+    if (k === "normal" && test.survival) return "survival";
+    if (k === "normal") return cfg.mode === "flow" ? "time" : cfg.mode;
+    return null; // mixed, practice, challenge: the tag says what it is
+  }
   function renderConfig() {
     const box = $("#config"); box.replaceChildren();
     const sep = () => { const d = document.createElement("span"); d.className = "div"; box.appendChild(d); };
@@ -213,12 +225,34 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       const b = document.createElement("button"); b.type = "button"; b.textContent = label;
       b.setAttribute("aria-pressed", String(pressed)); b.onclick = onclick; return b;
     };
-    const plain = test && (test.source.kind === "normal" || test.source.kind === "mix");
-    ["words", "time"].forEach((mode, gi) => {
-      if (gi) sep();
-      const g = document.createElement("div"); g.className = "grp";
-      g.innerHTML = `<span class="lbl">${mode === "words" ? "words" : "seconds"}</span>`;
-      const active = plain && !(test && test.survival) && cfg.mode === mode;
+    const group = (cls = "grp") => { const g = document.createElement("div"); g.className = cls; box.appendChild(g); return g; };
+    const fresh = () => newTest({ kind: "normal" });
+    const set = (ch) => { Object.assign(cfg, ch); saveSettings(cfg); fresh(); };
+    const tab = currentTab();
+
+    // the switch
+    const modes = group("modes"); modes.setAttribute("role", "group"); modes.setAttribute("aria-label", "What to type");
+    const tabBtn = (key, label, go) => { const b = btn(label, tab === key, () => { todayOpen = false; go(); }); modes.appendChild(b); return b; };
+    tabBtn("words", "Words", () => set({ mode: "words" }));
+    tabBtn("time", "Time", () => set({ mode: cfg.mode === "flow" ? "flow" : "time" }));
+    tabBtn("quote", "Quote", () => newTest(quoteSource(test?.quote?.id)));
+    tabBtn("survival", "Survival", () => set({ mode: "survival" }));
+    tabBtn("code", "Code", () => newTest({ kind: "code", idx: test && test.code ? test.source.idx : 0 }));
+    const today = btn("Today ▾", tab === "today", () => { todayOpen = !todayOpen; renderConfig(); });
+    today.setAttribute("aria-expanded", String(todayOpen));
+    const wrap = document.createElement("div"); wrap.className = "todaywrap"; wrap.appendChild(today); modes.appendChild(wrap);
+    if (todayOpen) {
+      const m = document.createElement("div"); m.className = "todaymenu"; m.setAttribute("role", "menu");
+      const item = (label, sub, go) => { const b = document.createElement("button"); b.type = "button"; b.setAttribute("role", "menuitem"); b.innerHTML = `${label}<small>${sub}</small>`; b.onclick = () => { todayOpen = false; go(); }; m.appendChild(b); };
+      item("Daily galley", "40 words, the same for everyone", () => newTest(dailySource()));
+      item("Daily survival", "3 lives, 30 wpm floor, one run that counts", () => newTest(dailySurvSource()));
+      wrap.appendChild(m);
+    }
+
+    // a length: presets, then a custom number
+    const lengths = (mode, extra) => {
+      const g = group();
+      const active = tab === mode && cfg.mode !== "flow";
       for (const v of PRESETS[mode]) g.appendChild(btn(v, active && cfg[mode] === v, () => applyConfig(mode, v)));
       const isCustom = !PRESETS[mode].includes(cfg[mode]);
       if (editing === mode) {
@@ -235,49 +269,51 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
         inp.onblur = () => commit(true);
         g.appendChild(inp); requestAnimationFrame(() => { inp.focus(); inp.select(); });
       } else {
-        g.appendChild(btn(isCustom ? `${cfg[mode]} ✎` : "custom", active && isCustom, () => { editing = mode; renderConfig(); }));
+        const c = btn(isCustom && active ? `${cfg[mode]} ✎` : "✎", active && isCustom, () => { editing = mode; renderConfig(); });
+        c.title = "Custom"; c.setAttribute("aria-label", isCustom ? `Custom: ${cfg[mode]}` : "Custom");
+        g.appendChild(c);
       }
-      box.appendChild(g);
+      if (extra) extra(g);
+    };
+    const select = (label, value, options, onchange) => {
+      const g = group();
+      const sel = document.createElement("select"); sel.className = "cfgsel"; sel.setAttribute("aria-label", label);
+      for (const [v, l] of options) { const o = document.createElement("option"); o.value = v; o.textContent = l; if (String(v) === String(value)) o.selected = true; sel.appendChild(o); }
+      sel.onchange = () => onchange(sel.value);
+      g.appendChild(sel);
+    };
+    const extras = () => {
+      const g = group();
+      g.appendChild(btn("punctuation", !!cfg.punct, () => set({ punct: !cfg.punct })));
+      g.appendChild(btn("numbers", !!cfg.nums, () => set({ nums: !cfg.nums })));
+    };
+    const wordList = () => select("Word list", cfg.list, [["200", "Top 200"], ["1k", "Top 1,000"], ["5k", "Top 5,000"], ["10k", "Top 10,000"]], (v) => {
+      cfg.list = v; saveSettings(cfg);
+      newTest(test && test.source.kind === "mix" ? { ...plain(test.source), seed: undefined } : { kind: "normal" });
     });
-    // which word list: one click, same setting as in the drawer
-    sep();
-    const lists = document.createElement("div"); lists.className = "grp";
-    lists.innerHTML = `<span class="lbl">top</span>`;
-    const surv = !!(test && test.survival);
-    for (const [key, label] of [["200", "200"], ["1k", "1k"], ["5k", "5k"], ["10k", "10k"]]) {
-      const b = btn(label, plain && !surv && cfg.list === key, () => {
-        cfg.list = key; if (cfg.mode === "survival") cfg.mode = "words"; saveSettings(cfg);
-        newTest(test && test.source.kind === "mix" ? { ...plain(test.source), seed: undefined } : { kind: "normal" });
-      });
-      b.title = `${LISTS[key].label} words`;
-      lists.appendChild(b);
-    }
-    box.appendChild(lists);
-    sep();
-    const more = document.createElement("div"); more.className = "grp";
-    more.appendChild(btn("flow", plain && cfg.mode === "flow", () => { cfg.mode = "flow"; saveSettings(cfg); newTest({ kind: "normal" }); }));
-    more.appendChild(btn("survival", surv, () => { cfg.mode = "survival"; saveSettings(cfg); newTest({ kind: "normal" }); }));
-    more.appendChild(btn("python", !!(test && test.code), () => newTest({ kind: "code", idx: test && test.code ? test.source.idx : 0 })));
-    more.appendChild(btn("daily", !!(test && test.source.kind === "daily"), () => newTest(dailySource())));
-    const ds = btn("daily survival", !!(test && test.source.kind === "dsurv"), () => newTest(dailySurvSource()));
-    ds.title = "Today's survival run: the same words for everyone, 3 lives, a 30 wpm floor";
-    more.appendChild(ds);
-    more.appendChild(btn("quote", !!(test && test.quote), () => newTest(quoteSource(test?.quote?.id))));
-    box.appendChild(more);
-    if (surv && test.source.kind === "normal") {
-      // lives and regen, one click each; the speed floor is in Settings
-      const g = document.createElement("div"); g.className = "grp";
-      g.innerHTML = `<span class="lbl">lives</span>`;
-      for (const v of SURVIVAL.lives) g.appendChild(btn(String(v), test.opts.surv.lives === v, () => { cfg.survLives = v; saveSettings(cfg); newTest({ kind: "normal" }); }));
-      const r = btn("regen", test.opts.surv.regen, () => { cfg.survRegen = !cfg.survRegen; saveSettings(cfg); newTest({ kind: "normal" }); });
+
+    if (tab === "words" || tab === "time") {
+      sep();
+      lengths(tab, tab === "time" ? (g) => {
+        const f = btn("∞", cfg.mode === "flow", () => set({ mode: "flow" }));
+        f.title = "Flow: no clock and no end; Esc finishes"; f.setAttribute("aria-label", "Flow: no clock");
+        g.appendChild(f);
+      } : null);
+      sep(); wordList(); extras();
+    } else if (tab === "survival") {
+      sep();
+      const g = group(); g.innerHTML = `<span class="lbl">lives</span>`;
+      for (const v of SURVIVAL.lives) g.appendChild(btn(String(v), test.opts.surv.lives === v, () => set({ survLives: v })));
+      const r = btn("regen", test.opts.surv.regen, () => set({ survRegen: !cfg.survRegen }));
       r.title = `A life back after ${SURVIVAL.regenEvery} clean words in a row`;
       g.appendChild(r);
-      box.appendChild(g);
-    }
-    if (test && test.quote) {
-      const q = document.createElement("div"); q.className = "grp";
-      q.innerHTML = `<span class="lbl">quote</span>`;
-      for (const [k, label] of [["any", "any"], ["short", "short"], ["medium", "medium"], ["long", "long"]]) {
+      sep();
+      select("Speed floor", cfg.survFloor, SURVIVAL.floors.map((f) => [f, f ? `${f} wpm floor` : "No speed floor"]), (v) => set({ survFloor: +v }));
+      extras();
+    } else if (tab === "quote") {
+      sep();
+      const q = group();
+      for (const [k, label] of [["any", "any length"], ["short", "short"], ["medium", "medium"], ["long", "long"]]) {
         const b = btn(label, cfg.quoteLen === k, () => { cfg.quoteLen = k; saveSettings(cfg); newTest(quoteSource(test.quote.id)); });
         if (QUOTE_LENGTHS[k].max || QUOTE_LENGTHS[k].min) b.title = QUOTE_LENGTHS[k].label + (QUOTE_LENGTHS[k].max && !QUOTE_LENGTHS[k].min ? `: up to ${QUOTE_LENGTHS[k].max} words` : QUOTE_LENGTHS[k].min && !QUOTE_LENGTHS[k].max ? `: ${QUOTE_LENGTHS[k].min}+ words` : `: ${QUOTE_LENGTHS[k].min} to ${QUOTE_LENGTHS[k].max} words`);
         q.appendChild(b);
@@ -285,28 +321,34 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
       const f = btn("", !!cfg.quoteFavs, () => { cfg.quoteFavs = !cfg.quoteFavs; saveSettings(cfg); newTest(quoteSource(test.quote.id)); });
       f.innerHTML = `${HEART(!!cfg.quoteFavs)} favourites`; f.className = "favbtn"; f.title = "Only quotes you've hearted";
       q.appendChild(f);
-      box.appendChild(q);
+    } else if (tab === "code") {
+      sep();
+      select("Script", test.source.idx, SNIPPETS.map((sn, i) => [i, `${i + 1}. ${sn.title}`]), (v) => newTest({ kind: "code", idx: +v }));
     }
     renderNavs();
   }
+  // a click anywhere else closes the Today menu
+  document.addEventListener("click", (e) => { if (todayOpen && !e.target.closest(".todaywrap")) { todayOpen = false; renderConfig(); } });
   function renderNavs() {
     const navs = $("#navs"); if (!navs) return;
     navs.replaceChildren();
     const nav = (cls, html, onclick, id, title) => { const b = document.createElement("button"); b.type = "button"; b.className = cls; b.id = id; b.innerHTML = html; b.onclick = onclick; if (title) b.title = title; navs.appendChild(b); };
-    if (accountsEnabled) {
-      if (user) {
-        const first = esc((user.name || user.email || "Account").split(/[ @]/)[0]);
-        const title = sync === "syncing" ? "Syncing…" : sync === "error" ? `Not synced: ${syncError}` : "Synced";
-        nav("navbtn acct", `<i class="dot ${sync}"></i>${first}`, () => { location.hash = "stats"; }, "openAccount", title);
-      } else {
-        nav("navbtn", "Sign in", signIn, "signIn", "Sign in with Google to keep your progress on every device");
-      }
-    }
     nav("navbtn" + (location.hash.startsWith("#room") ? " on" : ""), `${ICON_FLAG}Race${room ? ` <i class="badge" title="You're in room ${room.code}">${room.code}</i>` : ""}`, () => { location.hash = room ? "room=" + room.code : "room"; }, "openRoom", "Race friends in a private room");
     nav("navbtn" + (location.hash === "#quotes" ? " on" : ""), `${ICON_QUOTE}Quotes${queueCount ? ` <i class="badge" title="${queueCount} to review">${queueCount}</i>` : ""}`, () => { location.hash = "quotes"; }, "openQuotes");
     nav("navbtn" + (location.hash === "#boards" ? " on" : ""), `${ICON_PODIUM}Boards`, () => { location.hash = "boards"; }, "openBoards");
     nav("navbtn" + (location.hash === "#stats" ? " on" : ""), `${ICON_CHART}Stats${editionNew ? ` <i class="badge" title="A new weekly edition is out">new</i>` : ""}`, () => { location.hash = editionNew ? "edition" : "stats"; }, "openStats");
-    nav("navbtn", `${ICON_GEAR}Settings`, openSettings, "openSettings");
+    nav("navbtn icon", ICON_GEAR, openSettings, "openSettings", "Settings");
+    $("#openSettings").setAttribute("aria-label", "Settings");
+    if (accountsEnabled) {
+      if (user) {
+        const first = (user.name || user.email || "Account").split(/[ @]/)[0];
+        const title = `${first} · ${sync === "syncing" ? "syncing…" : sync === "error" ? `not synced: ${syncError}` : "synced"}`;
+        nav("navbtn acct", `<i class="dot ${sync}"></i>${esc(first.slice(0, 1).toUpperCase())}`, () => { location.hash = "stats"; }, "openAccount", title);
+        $("#openAccount").setAttribute("aria-label", `Your account: ${title}`);
+      } else {
+        nav("navbtn", "Sign in", signIn, "signIn", "Sign in with Google to keep your progress on every device");
+      }
+    }
   }
 
   /* ---------- the daily board ---------- */
@@ -467,7 +509,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
   function focusInput() { if (!drawerOpen && test && !test.ended && statsView.hidden) input.focus(); }
   function newTest(source) {
     clearInterval(ticker); clearTimeout(idleTimer); stopGhost(); stopRace();
-    document.body.classList.remove("ended", "typing-now");
+    document.body.classList.remove("ended", "typing-now", "quiet");
     doneBand.hidden = true;
     const code = source.kind === "code", practice = source.kind === "practice", quoteMode = source.kind === "quote" || (source.kind === "room" && source.opts?.mode === "quote");
     // survival is its own kind of run; a mixed galley started from it falls back to words
@@ -1173,6 +1215,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     test.lastT = t; test.gap = false;
     pencil.classList.remove("idle");
     if (cfg.focus) document.body.classList.add("typing-now");
+    if (cfg.quietTop !== false) document.body.classList.add("quiet"); // the top bar fades until the mouse moves
     clearTimeout(idleTimer);
     idleTimer = setTimeout(() => { pencil.classList.add("idle"); document.body.classList.remove("typing-now"); }, 1200);
     return dt;
@@ -1430,7 +1473,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     if (test.race) { clearTimeout(test.race.goTimer); clearInterval(test.race.ghostTick); }
     const r = analyse(test, secs);
     if (test.race && test.startT != null) sendRun({ final: true, r, secs });
-    document.body.classList.add("ended"); document.body.classList.remove("typing-now");
+    document.body.classList.add("ended"); document.body.classList.remove("typing-now", "quiet");
     input.blur(); stage.classList.remove("unfocused"); pencil.classList.add("idle");
     const s = test.source;
     const result = buildResult({
@@ -1874,6 +1917,8 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     } else if (test && !test.ended) { measure(); placeCaret(true); focusInput(); }
   }
   addEventListener("hashchange", route);
+  // a real mouse movement (not a twitch) brings the top bar back
+  addEventListener("pointermove", (e) => { if (document.body.classList.contains("quiet") && Math.abs(e.movementX) + Math.abs(e.movementY) > 4) document.body.classList.remove("quiet"); });
   if (import.meta.env.MODE === "uitest") window.__retype = { get state() { return state; }, get user() { return user; } };
 
   applyDisplay();

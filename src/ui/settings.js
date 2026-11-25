@@ -5,7 +5,7 @@ export const DEFAULTS = {
   stop: "off", backspace: "on", sudden: false, ratio: 0.4,
   list: "200", punct: false, nums: false,
   focus: false, live: true, paceLine: true, margin: true, roll: true, sound: "off", errSound: false, bell: true,
-  indent: "auto", ghost: "best", lendGhosts: true,
+  indent: "auto", ghost: "best", lendGhosts: true, quietTop: true,
   survLives: 3, survRegen: false, survFloor: 30,
   pencil: "red", paper: "thermal", ink: "pencil",
   quoteFrom: "all", quoteLen: "any", quoteSource: null, quoteClean: false, quoteFavs: false
@@ -43,7 +43,8 @@ export const SETTINGS = [
   { key: "survFloor", label: "Speed floor", help: "If your last 10 words drop below this speed, you lose a life. Stops a run being won by crawling.", options: [[0, "Off"], [20, "20"], [30, "30"], [40, "40"], [60, "60"]], restart: true, surv: true },
   { key: "survRegen", label: "Regain lives", help: "Win a life back after 50 clean words in a row, up to what you started with. Kept apart from runs without it.", options: [[false, "Off"], [true, "On"]], restart: true, surv: true },
   { section: "While typing" },
-  { key: "focus", label: "Focus mode", help: "Fade everything except the text while you type.", options: [[false, "Off"], [true, "On"]] },
+  { key: "quietTop", label: "Fade the top bar while typing", help: "The modes, options and buttons above the paper fade once you start typing, and come back when you move the mouse or finish.", options: [[true, "On"], [false, "Off"]] },
+  { key: "focus", label: "Focus mode", help: "Fade everything except the text while you type, the stats and corrections too.", options: [[false, "Off"], [true, "On"]] },
   { key: "live", label: "Live stats", options: [[true, "Show"], [false, "Hide"]] },
   { key: "margin", label: "Corrections margin", options: [[true, "Show"], [false, "Hide"]] },
   { key: "paceLine", label: "Progress line", help: "A thin line along the paper: time left in a timed galley, how far through a word galley, or how close you are to your best survival run. It turns green when you're on course to beat your best and red when you're behind it.", options: [[true, "Show"], [false, "Hide"]] },
