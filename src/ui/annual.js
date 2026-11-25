@@ -1,4 +1,4 @@
-// The Retype Annual page (#annual): your year as a front page. Facts from core/annual.js.
+// The Corratype Annual page (#annual): your year as a front page. Facts from core/annual.js.
 import { esc, fmtDuration } from "./util.js";
 import { buildAnnual } from "../core/annual.js";
 
@@ -15,7 +15,7 @@ export function renderAnnual(view, h) {
       <button type="button" class="go" id="anBack">Back to typing <kbd>esc</kbd></button>
     </div>
     <article class="edition annual">
-      <header class="mast"><div class="rule"></div><h1>The Retype Annual</h1>
+      <header class="mast"><div class="rule"></div><h1>The Corratype Annual</h1>
         <div class="dateline"><span>${a.year}</span><span>The year in galleys</span><span>Price: one galley</span></div><div class="rule"></div></header>
       <h2 class="lead">${esc(a.lead)}</h2>
       <p class="dek">${esc(a.dek)}</p>

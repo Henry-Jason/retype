@@ -1,6 +1,6 @@
 // Levels: XP from every galley, no top level.
 //
-// Typing earns XP steadily; bonuses reward the things Retype cares about (accuracy first,
+// Typing earns XP steadily; bonuses reward the things Corratype cares about (accuracy first,
 // then speed, bests and showing up). The numbers are deliberately round so they're easy to
 // explain on the Stats page.
 

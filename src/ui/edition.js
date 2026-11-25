@@ -18,7 +18,7 @@ export function renderEdition(view, handlers, which = "last") {
       <button type="button" class="go" id="edBack">Back to typing <kbd>esc</kbd></button>
     </div>
     <article class="edition">
-      <header class="mast"><div class="rule"></div><h1>The Retype Weekly</h1>
+      <header class="mast"><div class="rule"></div><h1>The Corratype Weekly</h1>
         <div class="dateline"><span>No. ${e.no}</span><span>Week of ${longDate(e.start)}${which === "this" ? " · so far" : ""}</span><span>Price: one galley</span></div><div class="rule"></div></header>
       <h2 class="lead">${esc(e.lead)}</h2>
       <p class="dek">${esc(e.dek)}</p>

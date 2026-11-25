@@ -121,6 +121,7 @@ describe("display names", () => {
       expect(screenName(n).ok, n).toBe(false);
     }
     expect(screenName("Admin").reason).toMatch(/reserved/);
+    expect(screenName("Corratype HQ").ok).toBe(false);
   });
   it("falls back to Typist and a bit of the id", async () => {
     const { safeName, fallbackName } = await import("../src/core/moderation.js");

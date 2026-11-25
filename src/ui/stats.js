@@ -157,8 +157,8 @@ export function renderStats(view, state, handlers) {
     <p class="lede">${handlers.account?.user ? "Everything here is saved to your account." : "Everything here is saved in this browser only."} Score is wpm × accuracy², so accuracy counts for more than speed: 80 wpm at 100% beats 100 wpm at 89%. PP adds up your best galleys, and your rank comes from it.</p>
     <div class="sgrid">
       ${accountCard(handlers.account)}
-      <a class="scard wide edlink" href="#annual"><h2>The Retype Annual · ${new Date().getFullYear()}</h2><div class="big">Your year at the desk →</div><div class="sub">The year as a front page: how much you typed, your best day, your best galley, your races, your rank and the word that fought back hardest.</div></a>
-      <a class="scard wide edlink" href="#edition"><h2>The Retype Weekly</h2><div class="big">Read this week's edition →</div><div class="sub">Your week at the desk as a front page: the numbers, your best, the word that gave you the most trouble and the headlines you made. A new one comes out every Monday.</div></a>
+      <a class="scard wide edlink" href="#annual"><h2>The Corratype Annual · ${new Date().getFullYear()}</h2><div class="big">Your year at the desk →</div><div class="sub">The year as a front page: how much you typed, your best day, your best galley, your races, your rank and the word that fought back hardest.</div></a>
+      <a class="scard wide edlink" href="#edition"><h2>The Corratype Weekly</h2><div class="big">Read this week's edition →</div><div class="sub">Your week at the desk as a front page: the numbers, your best, the word that gave you the most trouble and the headlines you made. A new one comes out every Monday.</div></a>
       ${levelCard(state.xp)}
       ${ppCard(top)}
       <div class="scard"><h2>Streak</h2><div class="big">${st.count} ${st.count === 1 ? "day" : "days"}</div>

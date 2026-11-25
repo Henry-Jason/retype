@@ -49,7 +49,7 @@ export function renderRoom(view, ctx) {
 
   if (!ctx.enabled || !ctx.signedIn) {
     view.innerHTML = head("Race your friends", "Make a room, send the link, and race the same words at the same moment. Up to " + ROOM.maxPlayers + " players.") + `
-      <div class="scard wide"><div class="sub">${ctx.enabled ? "Rooms need you signed in, so the others see your name." : "Rooms need accounts, and this copy of Retype isn't connected to one."}</div>
+      <div class="scard wide"><div class="sub">${ctx.enabled ? "Rooms need you signed in, so the others see your name." : "Rooms need accounts, and this copy of Corratype isn't connected to one."}</div>
       ${ctx.enabled ? `<div class="sactions"><button type="button" class="go primary" id="roomIn">Sign in with Google</button></div>` : ""}</div>`;
     view.querySelector("#roomIn")?.addEventListener("click", ctx.onSignIn);
   } else if (!ctx.room) {

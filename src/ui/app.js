@@ -166,7 +166,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     const results = await store.all();
     const e = buildEdition(results, weekStart(weekStart(Date.now()) - 86400000), {});
     editionNew = !e.quiet;
-    if (editionNew) { renderNavs(); toast("A new edition of The Retype Weekly is out. It's under Stats."); }
+    if (editionNew) { renderNavs(); toast("A new edition of The Corratype Weekly is out. It's under Stats."); }
   }
   async function showEdition() {
     const results = await store.all();
@@ -1483,7 +1483,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
   }
   function startReceipt() {
     receipt.className = "receipt";
-    receipt.innerHTML = `<div class="rhead"><b>RETYPE</b><span>GALLEY ${galleyNo()} · ${esc(galleyWhat())}<br>${stampDate()}</span></div><div class="dash"></div><div class="rows"></div>`;
+    receipt.innerHTML = `<div class="rhead"><b>CORRATYPE</b><span>GALLEY ${galleyNo()} · ${esc(galleyWhat())}<br>${stampDate()}</span></div><div class="dash"></div><div class="rows"></div>`;
     rows = receipt.querySelector(".rows");
   }
   function printRow(w) {
@@ -1717,7 +1717,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
     const rk = change.rankAfter.rank, next = change.rankAfter.next;
     const quips = ["The corner office is looking smaller already.", "The newsroom stands. Some of it, anyway.", "Your name, in slightly bigger type.", "Celebrations are planned, then cancelled for deadlines.", "Pencils are sharpened in your honour."];
     const el = document.createElement("div"); el.className = "ceremony"; el.setAttribute("role", "dialog"); el.setAttribute("aria-label", `Promoted to ${rk.name}`);
-    el.innerHTML = `<div class="cpage"><div class="cmast">The Retype · Extra</div><div class="crule"></div>
+    el.innerHTML = `<div class="cpage"><div class="cmast">The Corratype · Extra</div><div class="crule"></div>
       <div class="ckicker">Promotion</div><h2>${esc(boardName || (user?.name || "").split(" ")[0] || "Local typist")} named ${esc(rk.name)}</h2>
       <p>${esc(quips[Math.floor(change.ppAfter) % quips.length])}</p>
       <div class="cfacts"><span><b>${Math.round(change.ppAfter).toLocaleString("en-IE")}</b> PP</span>${next ? `<span>Next: <b>${esc(next.name)}</b> at ${next.min.toLocaleString("en-IE")} PP</span>` : `<span>The top of the masthead.</span>`}</div>
@@ -2054,7 +2054,7 @@ export function startApp({ cfg, store, progress, accountsEnabled = false, cloudR
   newTest({ kind: "normal" });
   // a first visit: the one idea that matters, before the first galley
   if (!state.totals.galleys && !seen("welcome")) {
-    $("#during")?.insertAdjacentHTML("afterbegin", `<div class="welcome" id="welcome"><h2>Welcome to Retype</h2>
+    $("#during")?.insertAdjacentHTML("afterbegin", `<div class="welcome" id="welcome"><h2>Welcome to Corratype</h2>
       <ul><li><b>Accuracy counts double.</b> Your score is wpm × accuracy², so 80 wpm at 100% beats 100 wpm at 89%.</li>
       <li><b>Mistakes are marked like a proof</b>, and the words you fumble come back in practice until they don't.</li>
       <li><b>Perfect galleys drop pieces of type</b> for your collection, and <a href="#room">Race</a> puts you up against other typists.</li></ul>

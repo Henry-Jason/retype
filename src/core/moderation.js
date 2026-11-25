@@ -52,7 +52,7 @@ const hasStrong = (text) => tokens(text).some((t) => STRONG.some((w) => t === w 
 
 // Names show on the boards and to strangers in quick races, so they're held to a stricter line
 // than quotes: no strong language at all, no links or handles, and nothing posing as staff.
-const RESERVED = ["admin", "administrator", "moderator", "mod", "mods", "retype", "official", "staff", "support", "system"];
+const RESERVED = ["admin", "administrator", "moderator", "mod", "mods", "retype", "corratype", "official", "staff", "support", "system"];
 
 /** The same tidying as cleanName in sync.js (kept here: this file runs on the server too). */
 const tidyName = (s) => String(s || "").replace(/[<>]/g, "").replace(/\s+/g, " ").trim().slice(0, 20).trim();

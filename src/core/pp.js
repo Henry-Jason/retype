@@ -48,7 +48,7 @@ export const countsForPp = (r) =>
 
 /* ---------- how hard the words were ---------- */
 
-// Frequency rank of every word Retype can give you. The 10k list is in frequency order and starts
+// Frequency rank of every word Corratype can give you. The 10k list is in frequency order and starts
 // with the whole 5k list, so a top-5,000 word has the same rank it always had; the odd hand-picked
 // word that isn't in it counts as rare.
 const RANK = new Map(W10K.map((w, i) => [w, i]));
@@ -59,7 +59,7 @@ const wordDiff = (rank) => 0.267 + 0.0858 * Math.log2(rank + 2);
 const NUMBER_DIFF = 1.1;
 
 /**
- * Difficulty of a run of words, about 0.85 to 1.2, or { ok: false } if they aren't Retype's
+ * Difficulty of a run of words, about 0.85 to 1.2, or { ok: false } if they aren't Corratype's
  * words or are too repetitive to count (the server rejects such galleys).
  */
 export function difficulty(words) {
@@ -72,7 +72,7 @@ export function difficulty(words) {
     let d;
     if (/^\d+$/.test(bare)) d = NUMBER_DIFF;
     else if (RANK.has(lower)) d = wordDiff(RANK.get(lower));
-    else return { ok: false, reason: `"${raw}" isn't one of Retype's words` };
+    else return { ok: false, reason: `"${raw}" isn't one of Corratype's words` };
     sum += d;
     chars += raw.length;
     special += raw.length - (raw.match(/[a-z]/g) || []).length; // capitals, punctuation, digits

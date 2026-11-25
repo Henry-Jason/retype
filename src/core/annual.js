@@ -1,4 +1,4 @@
-// The Retype Annual: a front page about your year at the desk. Pure: buildAnnual takes the galleys
+// The Corratype Annual: a front page about your year at the desk. Pure: buildAnnual takes the galleys
 // and the progress record and returns the page's facts. Uses the weekly edition's word-of-the-week rule.
 import { wordOfWeek } from "./edition.js";
 import { headline } from "./feats.js";

@@ -19,7 +19,7 @@ export function drawCard({ galley, what, date, acc, wpm, raw, errors, best, secs
   const center = W / 2;
   let y = y0 + 58;
   g.textAlign = "center"; g.fillStyle = C.ink; g.font = mono(30, 700);
-  g.letterSpacing = "8px"; g.fillText("RETYPE", center + 4, y); g.letterSpacing = "0px";
+  g.letterSpacing = "8px"; g.fillText("CORRATYPE", center + 4, y); g.letterSpacing = "0px";
   y += 30; g.font = mono(15); g.fillStyle = C.muted;
   g.fillText(`GALLEY ${galley} · ${what}`, center, y); y += 22; g.fillText(date, center, y);
   const dash = (yy) => { g.save(); g.strokeStyle = C.line; g.setLineDash([4, 4]); g.beginPath(); g.moveTo(x0 + 28, yy); g.lineTo(x1 - 28, yy); g.stroke(); g.restore(); };
@@ -93,7 +93,7 @@ export function drawRankCard({ name, rank, pp, next, date }) {
   g.fillStyle = C.paper; g.shadowColor = "rgba(0,0,0,.18)"; g.shadowBlur = 24; g.shadowOffsetY = 10; g.fillRect(50, 40, W - 100, H - 90); g.shadowColor = "transparent";
   const serif = (size, w = 700) => `${w} ${size}px Georgia, "Times New Roman", serif`;
   g.textAlign = "center"; g.fillStyle = C.ink;
-  g.font = serif(44); g.fillText("The Retype", W / 2, 110);
+  g.font = serif(44); g.fillText("The Corratype", W / 2, 110);
   g.fillRect(80, 128, W - 160, 2); g.fillRect(80, 134, W - 160, 1);
   g.font = `400 13px "Overpass Mono", "Courier Prime", monospace`; g.fillStyle = C.muted; g.fillText(`EXTRA · ${date}`, W / 2, 156);
   g.fillStyle = C.pencil; g.font = `700 14px "Overpass Mono", monospace`; g.fillText("PROMOTION", W / 2, 214);
